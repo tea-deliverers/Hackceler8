@@ -15,23 +15,24 @@ function resize() {
         globals.visuals.initialize(globals.map);
     }
 }
+
 resize();
 window.addEventListener('resize', resize);
 
 class ProxyVisuals extends visuals.Visuals {
+    challengeLink = new Map();
+
     renderEntity(e) {
         const ret = super.renderEntity(e);
+        const skipCheck = e.type === "Terminal" || e.type === "FlagConsole";
 
         /** copied from source --> **/
-        if (e.x > this.viewportX + RES_W ||
-            e.y > this.viewportY + RES_H) {
-            return false
-        }
+        let outView = e.x > this.viewportX + RES_W ||
+            e.y > this.viewportY + RES_H ||
+            e.x < this.viewportX - 64 ||
+            e.y < this.viewportY - 64;
 
-        if (e.x < this.viewportX - 64 ||
-            e.y < this.viewportY - 64) {
-            return false
-        }
+        if (!skipCheck && outView) return;
 
         const frameset = e.frameSet
         const tile = frameset ? globals.map.framesets[frameset].getFrame(e.frameState, e.frame).tile : globals.map.globalTiles[e.tileGID];
@@ -41,30 +42,53 @@ class ProxyVisuals extends visuals.Visuals {
             return false
         }
 
-        if (e.x + tile.tileW < this.viewportX ||
-            e.y + tile.tileH < this.viewportY) {
-            return false
-        }
+        outView |= e.x + tile.tileW < this.viewportX ||
+            e.y + tile.tileH < this.viewportY;
+
+        if (!skipCheck && outView) return;
+
         const xOffset = (globals.state.state.entities.player.x - (RES_W / 2));
         const yOffset = (globals.state.state.entities.player.y - (RES_H / 2));
 
         const ctx = this.elContext;
         /** <-- copied from source **/
 
+        if (e.type === "Terminal" || e.type === "FlagConsole") {
+            const chal = e.challengeID;
+            const midX = e.x + tile.tileW / 2, midY = e.y + tile.tileH / 2;
+            if (this.challengeLink.has(chal)) {
+                const [oMidX, oMidY] = this.challengeLink.get(chal);
+                this.challengeLink.delete(chal);
+
+                ctx.strokeStyle = chal.substr(5);
+                ctx.beginPath();
+                ctx.moveTo(midX - xOffset, midY - yOffset);
+                ctx.lineTo(oMidX - xOffset, oMidY - yOffset);
+                ctx.stroke();
+            } else {
+                this.challengeLink.set(chal, [midX, midY]);
+            }
+        }
+
+        if (outView) return;
+
+        const x = e.x - xOffset;
+        const y = e.y - yOffset;
+
         tile.collisions.forEach(c => {
             ctx.strokeStyle = ctx.fillStyle = 'black';
-            ctx.strokeRect(e.x - xOffset + c.x, e.y - yOffset + c.y, c.width, c.height);
+            ctx.strokeRect(x + c.x, y + c.y, c.width, c.height);
         });
 
         ctx.strokeStyle = ctx.fillStyle = 'red';
         ctx.font = '16px monospace';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(e.id, e.x - xOffset, e.y - yOffset + tile.tileH);
+        ctx.fillText(e.id, x, y + tile.tileH);
 
         ctx.textBaseline = 'top';
-        ctx.fillText(e.type, e.x - xOffset, e.y - yOffset);
+        ctx.fillText(e.type, x, y);
 
-        ctx.strokeRect(e.x - xOffset, e.y - yOffset, tile.tileW, tile.tileH);
+        ctx.strokeRect(x, y, tile.tileW, tile.tileH);
         return ret;
     }
 
