@@ -2,11 +2,11 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"sync"
 
 	"github.com/gorilla/websocket"
 )
@@ -34,11 +34,10 @@ func wsMitm(writer http.ResponseWriter, request *http.Request) {
 	}
 	defer client.Close()
 
-	var sg sync.WaitGroup
-	sg.Add(2)
+	ctx, cancel := context.WithCancel(request.Context())
 
 	go func() {
-		defer sg.Done()
+		defer cancel()
 		for {
 			mt, message, err := client.ReadMessage()
 			if err != nil {
@@ -56,11 +55,11 @@ func wsMitm(writer http.ResponseWriter, request *http.Request) {
 	}()
 
 	go func() {
-		defer sg.Done()
+		defer cancel()
 		recvServer(client, server)
 	}()
 
-	sg.Wait()
+	<-ctx.Done()
 }
 
 func aux(writer http.ResponseWriter, request *http.Request) {
