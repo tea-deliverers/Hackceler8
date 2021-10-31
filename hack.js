@@ -3,8 +3,20 @@
 
 'use strict';
 
-RES_W = 1920;
-RES_H = 1080;
+const FACTOR = 16 / 9;
+
+// RES_W = 1920;
+// RES_H = 1080;
+
+function resize() {
+    RES_W = window.innerWidth;
+    RES_H = RES_W / FACTOR;
+    if (globals.map) {
+        globals.visuals.initialize(globals.map);
+    }
+}
+resize();
+window.addEventListener('resize', resize);
 
 class ProxyVisuals extends visuals.Visuals {
     renderEntity(e) {
@@ -58,7 +70,7 @@ class ProxyVisuals extends visuals.Visuals {
 
     drawTiles(c, layer) {
         const ret = super.drawTiles(c, layer);
-        if (layer.name != "fg0") return ret;
+        if (layer.name !== "fg0") return ret;
 
         /** copied from source --> **/
         const ctx = c.getContext("2d");
