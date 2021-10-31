@@ -40,14 +40,14 @@ func mitm(writer http.ResponseWriter, request *http.Request) {
 			mt, message, err := client.ReadMessage()
 			if err != nil {
 				log.Println("read client:", err)
-				break
+				return
 			}
 			//log.Printf("recv client: %s", message)
 
 			err = server.WriteMessage(mt, message)
 			if err != nil {
 				log.Println("write server:", err)
-				break
+				return
 			}
 		}
 	}()

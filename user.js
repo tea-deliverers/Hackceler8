@@ -23,6 +23,8 @@ WebSocket = ProxyWS;
 
 class ProxyVisuals extends visuals.Visuals {
     renderEntity(e) {
+        const ret = super.renderEntity(e);
+
         /** copied from source --> **/
         if (e.x > this.viewportX + RES_W ||
             e.y > this.viewportY + RES_H) {
@@ -52,11 +54,22 @@ class ProxyVisuals extends visuals.Visuals {
         const ctx = this.elContext;
         /** <-- copied from source **/
 
-        ctx.strokeStyle = 'red';
-        ctx.strokeRect((e.x - xOffset)|0, (e.y - yOffset)|0, tile.tileW, tile.tileH);
-        this.playerCanvasClearRects.push([(e.x - xOffset - 1)|0, (e.y - yOffset - 1)|0, tile.tileW + 2, tile.tileH + 2]);
+        let width = tile.tileW;
 
-        return super.renderEntity(e);
+        ctx.strokeStyle = ctx.fillStyle = 'red';
+        ctx.font = '16px monospace';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(e.id, (e.x - xOffset)|0, (e.y - yOffset + tile.tileH)|0);
+        width = Math.max(width, ctx.measureText(e.id).width);
+
+        ctx.textBaseline = 'top';
+        ctx.fillText(e.type, (e.x - xOffset)|0, (e.y - yOffset)|0);
+        width = Math.max(width, ctx.measureText(e.type).width);
+
+        ctx.strokeRect((e.x - xOffset)|0, (e.y - yOffset)|0, tile.tileW, tile.tileH);
+        this.playerCanvasClearRects.push([(e.x - xOffset - 1)|0, (e.y - yOffset - 1)|0, width + 2, tile.tileH + 2]);
+
+        return ret;
     }
 }
 

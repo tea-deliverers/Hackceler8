@@ -14,14 +14,14 @@ func recvServer(client, server *websocket.Conn) {
 		mt, message, err := server.ReadMessage()
 		if err != nil {
 			log.Println("read server:", err)
-			break
+			return
 		}
 
 		var s ServerMsg
 		err = json.Unmarshal(message, &s)
 		if err != nil {
 			log.Println("decode server:", err)
-			break
+			return
 		}
 		switch s.Type {
 		case "terminal":
@@ -31,7 +31,7 @@ func recvServer(client, server *websocket.Conn) {
 				data, err := hex.DecodeString(s.Data)
 				if err != nil {
 					log.Println(err)
-					break
+					return
 				}
 				fmt.Println(hex.Dump(data))
 			}
@@ -40,7 +40,7 @@ func recvServer(client, server *websocket.Conn) {
 		err = client.WriteMessage(mt, message)
 		if err != nil {
 			log.Println("write client:", err)
-			break
+			return
 		}
 	}
 }
