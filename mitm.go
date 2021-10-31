@@ -42,7 +42,7 @@ func mitm(writer http.ResponseWriter, request *http.Request) {
 				log.Println("read client:", err)
 				break
 			}
-			log.Printf("recv client: %s", message)
+			//log.Printf("recv client: %s", message)
 
 			err = server.WriteMessage(mt, message)
 			if err != nil {
@@ -54,25 +54,25 @@ func mitm(writer http.ResponseWriter, request *http.Request) {
 
 	go func() {
 		defer sg.Done()
-		for {
-			mt, message, err := server.ReadMessage()
-			if err != nil {
-				log.Println("read server:", err)
-				break
-			}
-			log.Printf("recv server: %s", message)
-
-			err = client.WriteMessage(mt, message)
-			if err != nil {
-				log.Println("write client:", err)
-				break
-			}
-		}
+		recvServer(client, server)
 	}()
 
 	sg.Wait()
 }
 
+func aux(writer http.ResponseWriter, request *http.Request) {
+	client, err := upgrader.Upgrade(writer, request, nil)
+	if err != nil {
+		log.Print("aux: ", err)
+		return
+	}
+	defer client.Close()
+
+
+}
+
 func main() {
-	log.Fatal(http.ListenAndServe("localhost:12450", http.HandlerFunc(mitm)))
+	http.HandleFunc("/", mitm)
+	http.HandleFunc("/aux", aux)
+	log.Fatal(http.ListenAndServe("localhost:12450", nil))
 }
