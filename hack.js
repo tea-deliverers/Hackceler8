@@ -3,14 +3,15 @@
 
 'use strict';
 
-const FACTOR = 16 / 9;
-
-// RES_W = 1920;
-// RES_H = 1080;
-
 function resize() {
+    const RATIO = 16 / 9;
+
     RES_W = window.innerWidth;
-    RES_H = RES_W / FACTOR;
+    RES_H = RES_W / RATIO;
+    if (RES_H > window.innerHeight) {
+        RES_H = window.innerHeight;
+        RES_W = RES_H * RATIO;
+    }
     if (globals.map) {
         globals.visuals.initialize(globals.map);
     }
@@ -19,7 +20,38 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
+class MouseDisplay {
+    mouseX;
+    mouseY;
+    lastX;
+    lastY;
+
+    constructor() {
+        this.p = document.createElement('p');
+        this.p.style.position = 'absolute';
+        this.p.style.color = 'white';
+        this.p.style.fontSize = '1vw';
+        this.p.style.transform = 'translate(0.2vw, -2vw)';
+        this.p.style.userSelect = 'none';
+        document.body.append(this.p);
+    }
+
+    update() {
+        const offset = convertMouseToCanvas({clientX: this.mouseX, clientY: this.mouseY});
+        if (!offset) return;
+        const [offsetX, offsetY] = offset;
+        if (offsetX === this.lastX && offsetY === this.lastY) return;
+        this.lastX = offsetX;
+        this.lastY = offsetY;
+
+        this.p.style.left = `${this.mouseX}px`;
+        this.p.style.top = `${this.mouseY}px`;
+        this.p.innerText = `(${offsetX.toFixed(0)}, ${offsetY.toFixed(0)})`;
+    }
+}
+
 class ProxyVisuals extends visuals.Visuals {
+    mouseDisplay = new MouseDisplay();
     challengeLink = new Map();
 
     renderEntity(e) {
@@ -42,7 +74,7 @@ class ProxyVisuals extends visuals.Visuals {
             return false
         }
 
-        outView |= e.x + tile.tileW < this.viewportX ||
+        outView ||= e.x + tile.tileW < this.viewportX ||
             e.y + tile.tileH < this.viewportY;
 
         if (!skipCheck && outView) return;
@@ -123,6 +155,74 @@ class ProxyVisuals extends visuals.Visuals {
         const ctx = this.elContext;
         ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     }
+
+    render() {
+        super.render();
+        this.mouseDisplay.update();
+    }
 }
 
 visuals.Visuals = ProxyVisuals;
+
+class ProxyGame extends game.Game {
+    static connectionStartTick;
+    static connectionStartTime;
+
+    iterate(onlyLogic = false) {
+        /* copied from code */
+        const now = Date.now()
+        const maxPossibleTickNumber = (
+            ProxyGame.connectionStartTick +
+            (now - ProxyGame.connectionStartTime) * gameState.TICKS_PER_SECOND / 1000
+        ) | 0;
+        /* copied from code */
+
+        super.iterate(onlyLogic);
+    }
+}
+
+game.Game = ProxyGame;
+
+const oldWsOnMsg = main.wsOnMessage;
+main.wsOnMessage = function (e) {
+    let data = null
+    try {
+        data = JSON.parse(e.data);
+    } catch (ex) {
+        console.error("Failed to parse packet from server:", e.data);
+        return
+    }
+
+    if (data.type === "map") {
+        ProxyGame.connectionStartTime = Date.now();
+    } else if (data.type === "startState") {
+        ProxyGame.connectionStartTick = data.state.tick;
+    }
+
+    return oldWsOnMsg(e);
+}
+
+function convertMouseToCanvas({clientX, clientY}) {
+    const canvas = globals.visuals?.elEntities;
+    if (!canvas) return;
+    const {x, y} = canvas.getBoundingClientRect();
+    const offsetX = clientX - x, offsetY = clientY - y;
+    if (offsetX < 0 || offsetX >= canvas.width || offsetY < 0 || offsetY >= canvas.height) return;
+    const {viewportX, viewportY} = globals.visuals;
+    return [offsetX + viewportX, offsetY + viewportY];
+}
+
+document.addEventListener('click', function (e) {
+    const offset = convertMouseToCanvas(e);
+    if (!offset) return;
+    const [offsetX, offsetY] = offset;
+
+    console.log(offsetX, offsetY);
+});
+
+document.addEventListener('mousemove', function (e) {
+    if (!globals.visuals) return;
+    const disp = globals.visuals.mouseDisplay;
+    disp.mouseX = e.clientX;
+    disp.mouseY = e.clientY;
+});
