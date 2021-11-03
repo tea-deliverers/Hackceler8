@@ -80,6 +80,18 @@ func main() {
 			err = responseModifier(response, func(data []byte) []byte {
 				return bytes.Replace(data, []byte("const RES_"), []byte("let RES_"), 2)
 			})
+		case "/visuals.js":
+			err = responseModifier(response, func(data []byte) []byte {
+				data = bytes.Replace(data,
+					[]byte(`(globals.state.state.entities.player.x - (RES_W/2))`),
+					[]byte(`this.viewportX`),
+					1)
+				data = bytes.Replace(data,
+					[]byte(`(globals.state.state.entities.player.y - (RES_H/2))`),
+					[]byte(`this.viewportY`),
+					1)
+				return data
+			})
 		case "/":
 			err = responseModifier(response, func(data []byte) []byte {
 				index := bytes.Index(data, []byte("</head>"))
