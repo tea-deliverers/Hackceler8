@@ -19,7 +19,7 @@ class MouseDisplay {
     }
 
     update() {
-        const offset = convertMouseToCanvas({clientX: this.mouseX, clientY: this.mouseY});
+        const offset = convertMouseToWorld({clientX: this.mouseX, clientY: this.mouseY});
         if (!offset) {
             this.p.hidden = true;
             return;
@@ -240,25 +240,86 @@ visuals.Visuals = ProxyVisuals;
 class ProxyGame extends game.Game {
     static connectionStartTick;
     static connectionStartTime;
-    pendingInputs = []
-
-    processInputs() {
-        if (this.pendingInputs.length > 0) {
-            return this.pendingInputs.shift();
-        }
-        return super.processInputs();
-    }
+    pendingInputs = [];
+    simulatedStates = [];
+    simulateStateIndex = 0;
 
     iterate(onlyLogic = false) {
-        /* copied from code */
-        const now = Date.now()
-        const maxPossibleTickNumber = (
-            ProxyGame.connectionStartTick +
-            (now - ProxyGame.connectionStartTime) * gameState.TICKS_PER_SECOND / 1000
-        ) | 0;
-        /* copied from code */
+        if (!keysToggled.has('KeyH')) {
+            if (this.simulatedStates.length > 0) {
+                globals.state.state = this.simulatedStates[0][0];
+                this.simulatedStates = [];
+            }
+            this.simulateStateIndex = 0;
+            return super.iterate(onlyLogic);
+        }
+        if (onlyLogic) return;
 
-        super.iterate(onlyLogic);
+        const now = Date.now();
+        if (keysToggled.has('KeyT')) {
+            // commit
+            const commitTime = ProxyGame.connectionStartTime + (
+                    globals.state.state.tick - ProxyGame.connectionStartTick) *
+                1000 / gameState.TICKS_PER_SECOND;
+            keysToggled.add('KeyP');
+            if (commitTime < now) {
+                keysToggled.delete('KeyT');
+                const changes = [];
+                for (let i = 0; i < this.simulateStateIndex; ++i) {
+                    const [s, inp] = this.simulatedStates[i];
+                    let diff;
+                    if (i === this.simulateStateIndex - 1) {
+                        diff = utils.computeDiff(globals.state.state, s);
+                    } else {
+                        diff = utils.computeDiff(this.simulatedStates[i + 1][0], s);
+                    }
+                    changes.push({inputs: inp, state: diff});
+                }
+                main.wsSend({
+                    type: "ticks",
+                    changes: changes
+                });
+                this.simulatedStates = this.simulatedStates.splice(this.simulateStateIndex);
+                this.simulateStateIndex = 0;
+            }
+        } else if (now > this.lastTickTime + gameState.MS_PER_TICK) {
+            if ('KeyZ' in this.keyStates) {
+                if (this.simulateStateIndex > 0) {
+                    globals.state.state = this.simulatedStates[--this.simulateStateIndex][0];
+                }
+                keysToggled.add('KeyP');
+            } else if ('KeyX' in this.keyStates) {
+                if (this.simulateStateIndex < this.simulatedStates.length - 1) {
+                    globals.state.state = this.simulatedStates[++this.simulateStateIndex][0];
+                }
+                keysToggled.add('KeyP');
+            } else {
+                if ("KeyW" in this.keyStates || "ArrowUp" in this.keyStates ||
+                    "KeyA" in this.keyStates || "ArrowLeft" in this.keyStates ||
+                    "KeyS" in this.keyStates || "ArrowDown" in this.keyStates ||
+                    "KeyD" in this.keyStates || "ArrowRight" in this.keyStates ||
+                    "Space" in this.keyStates) {
+                    keysToggled.delete('KeyP');
+                }
+                if (!("Escape" in this.keyStates) &&
+                    !("KeyK" in this.keyStates) &&
+                    !keysToggled.has('KeyP')) {
+                    this.simulatedStates = this.simulatedStates.splice(
+                        0, this.simulateStateIndex++);
+
+                    const inputs = this.processInputs();
+                    this.simulatedStates.push([globals.state.stateCopy(), inputs]);
+                    globals.state.tick(inputs);
+                    this.lastTickTime = Date.now();
+                }
+            }
+            globals.visuals.render();
+        }
+
+        /* copied from code */
+        this.frameRequestID = window.requestAnimationFrame(() => {
+            this.iterate()
+        });
     }
 }
 
@@ -286,7 +347,7 @@ main.wsOnMessage = function (e) {
     return oldWsOnMsg(e);
 }
 
-function convertMouseToCanvas({clientX, clientY}) {
+function convertMouseToWorld({clientX, clientY}) {
     const canvas = globals.visuals?.elEntities;
     if (!canvas) return;
     const {x, y, width, height} = canvas.getBoundingClientRect();
@@ -308,34 +369,34 @@ function navigate(targetX, targetY) {
     ];
     const startTime = Date.now();
 
-    const heuristic = player => Math.abs(player.x + 47 - targetX) + Math.abs(player.y + 50 - targetY);
+    const heuristic = player => {
+        const {tile} = stateTpl.map.framesets[player.frameSet].getFrame(player.frameState, player.frame);
+        const box = tile.collisions[0];
+        const x = box.x + player.x, y = box.y + player.y;
+        return Math.max(x - targetX, targetX - x - box.width, 0) +
+            Math.max(y - targetY, targetY - y - box.height, 0);
+    }
 
     const stateTpl = globals.state.duplicate();
     const parent = new Map();
     const player = stateTpl.state.entities['player'];
-    const queue = [[player, stateTpl.state]];
+    const queue = [[heuristic(player), stateTpl.state]];
     parent.set(`${player.x}_${player.y}`, null);
 
     while (Date.now() - startTime < 300 && queue.length > 0) {
-        let [, state] = MinHeap.pop(queue);
+        let [he, state] = MinHeap.pop(queue);
 
         const player = state.entities['player'];
         const coord = `${player.x}_${player.y}`;
-        {
-            const {tile} = stateTpl.map.framesets[player.frameSet].getFrame(player.frameState, player.frame);
-            const box = tile.collisions[0];
-            const x = box.x + player.x, y = box.y + player.y;
-            if (targetX >= x && targetX < x + box.width &&
-                targetY >= y && targetY < y + box.height) {
-                let actions = [];
-                let cur = coord;
-                while (parent.get(cur) !== null) {
-                    const [prev, action] = parent.get(cur);
-                    actions.unshift(action);
-                    cur = prev;
-                }
-                return actions;
+        if (he <= 0) {
+            let actions = [];
+            let cur = coord;
+            while (parent.get(cur) !== null) {
+                const [prev, action] = parent.get(cur);
+                actions.unshift(action);
+                cur = prev;
             }
+            return actions;
         }
 
         stateTpl.state = state;
@@ -353,7 +414,7 @@ function navigate(targetX, targetY) {
 }
 
 document.addEventListener('click', function (e) {
-    const offset = convertMouseToCanvas(e);
+    const offset = convertMouseToWorld(e);
     if (!offset) return;
     if (globals.state?.state && globals.game.pendingInputs.length <= 0) {
         const navi = navigate(...offset);
