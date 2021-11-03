@@ -55,6 +55,22 @@ class MouseDisplay {
 
 const initWidth = RES_W;
 
+class KeyToggler extends Set {
+    constructor() {
+        super();
+
+        window.addEventListener("keypress", (e) => {
+            if (this.has(e.code)) {
+                this.delete(e.code);
+            } else {
+                this.add(e.code);
+            }
+        })
+    }
+}
+
+const keysPressed = new KeyToggler();
+
 class MapMover {
     offsetX = 0
     offsetY = 0
@@ -180,15 +196,17 @@ class ProxyVisuals extends visuals.Visuals {
             ctx.strokeRect(x + c.x, y + c.y, c.width, c.height);
         });
 
-        ctx.strokeStyle = ctx.fillStyle = 'red';
-        ctx.font = '16px monospace';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(e.id, x, y + tile.tileH);
+        if (keysPressed.has('KeyB')) {
+            ctx.strokeStyle = ctx.fillStyle = 'red';
+            ctx.font = '16px monospace';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(e.id, x, y + tile.tileH);
 
-        ctx.textBaseline = 'top';
-        ctx.fillText(e.type, x, y);
+            ctx.textBaseline = 'top';
+            ctx.fillText(e.type, x, y);
 
-        ctx.strokeRect(x, y, tile.tileW, tile.tileH);
+            ctx.strokeRect(x, y, tile.tileW, tile.tileH);
+        }
         return ret;
     }
 
