@@ -3,23 +3,6 @@
 
 'use strict';
 
-// function resize() {
-//     const RATIO = 16 / 9;
-//
-//     RES_W = window.innerWidth;
-//     RES_H = RES_W / RATIO;
-//     if (RES_H > window.innerHeight) {
-//         RES_H = window.innerHeight;
-//         RES_W = RES_H * RATIO;
-//     }
-//     if (globals.map) {
-//         globals.visuals.initialize(globals.map);
-//     }
-// }
-//
-// resize();
-// window.addEventListener('resize', resize);
-
 class MouseDisplay {
     mouseX;
     mouseY;
@@ -53,13 +36,11 @@ class MouseDisplay {
     }
 }
 
-const initWidth = RES_W;
-
 class KeyToggler extends Set {
     constructor() {
         super();
 
-        window.addEventListener("keypress", (e) => {
+        window.addEventListener("keypress", e => {
             if (this.has(e.code)) {
                 this.delete(e.code);
             } else {
@@ -69,7 +50,9 @@ class KeyToggler extends Set {
     }
 }
 
-const keysPressed = new KeyToggler();
+const keysToggled = new KeyToggler();
+
+const initWidth = RES_W;
 
 class MapMover {
     offsetX = 0
@@ -196,7 +179,7 @@ class ProxyVisuals extends visuals.Visuals {
             ctx.strokeRect(x + c.x, y + c.y, c.width, c.height);
         });
 
-        if (keysPressed.has('KeyB')) {
+        if (keysToggled.has('KeyB')) {
             ctx.strokeStyle = ctx.fillStyle = 'red';
             ctx.font = '16px monospace';
             ctx.textBaseline = 'bottom';
@@ -257,6 +240,14 @@ visuals.Visuals = ProxyVisuals;
 class ProxyGame extends game.Game {
     static connectionStartTick;
     static connectionStartTime;
+    pendingInputs = []
+
+    processInputs() {
+        if (this.pendingInputs.length > 0) {
+            return this.pendingInputs.shift();
+        }
+        return super.processInputs();
+    }
 
     iterate(onlyLogic = false) {
         /* copied from code */
@@ -305,12 +296,69 @@ function convertMouseToCanvas({clientX, clientY}) {
     return [offsetX + viewportX, offsetY + viewportY];
 }
 
+// Greedy Best First Search
+function navigate(targetX, targetY) {
+    const possibleActions = [
+        {'left': true},
+        {'right': true},
+        {'up': true},
+        {'up': true, 'left': true},
+        {'up': true, 'right': true},
+        {},
+    ];
+    const startTime = Date.now();
+
+    const heuristic = player => Math.abs(player.x + 47 - targetX) + Math.abs(player.y + 50 - targetY);
+
+    const stateTpl = globals.state.duplicate();
+    const parent = new Map();
+    const player = stateTpl.state.entities['player'];
+    const queue = [[player, stateTpl.state]];
+    parent.set(`${player.x}_${player.y}`, null);
+
+    while (Date.now() - startTime < 300 && queue.length > 0) {
+        let [, state] = MinHeap.pop(queue);
+
+        const player = state.entities['player'];
+        const coord = `${player.x}_${player.y}`;
+        {
+            const {tile} = stateTpl.map.framesets[player.frameSet].getFrame(player.frameState, player.frame);
+            const box = tile.collisions[0];
+            const x = box.x + player.x, y = box.y + player.y;
+            if (targetX >= x && targetX < x + box.width &&
+                targetY >= y && targetY < y + box.height) {
+                let actions = [];
+                let cur = coord;
+                while (parent.get(cur) !== null) {
+                    const [prev, action] = parent.get(cur);
+                    actions.unshift(action);
+                    cur = prev;
+                }
+                return actions;
+            }
+        }
+
+        stateTpl.state = state;
+        possibleActions.forEach(action => {
+            stateTpl.tick(action);
+            const newPlayer = stateTpl.state.entities['player'];
+            const newCoord = `${newPlayer.x}_${newPlayer.y}`;
+            if (!parent.has(newCoord)) {
+                parent.set(newCoord, [coord, action]);
+                MinHeap.push(queue, [heuristic(newPlayer), stateTpl.state]);
+            }
+            stateTpl.state = stateTpl.oldState;
+        })
+    }
+}
+
 document.addEventListener('click', function (e) {
     const offset = convertMouseToCanvas(e);
     if (!offset) return;
-    const [offsetX, offsetY] = offset;
-
-    console.log(offsetX, offsetY);
+    if (globals.state?.state && globals.game.pendingInputs.length <= 0) {
+        const navi = navigate(...offset);
+        if (navi) globals.game.pendingInputs.push(...navi);
+    }
 });
 
 document.addEventListener('mousemove', function (e) {
@@ -320,7 +368,7 @@ document.addEventListener('mousemove', function (e) {
     disp.mouseY = e.clientY;
 });
 
-// github.com/frogcat/canvas-arrow
+// https://github.com/frogcat/canvas-arrow
 CanvasRenderingContext2D.prototype.arrow = function (startX, startY, endX, endY, controlPoints) {
     const dx = endX - startX;
     const dy = endY - startY;
@@ -348,3 +396,79 @@ CanvasRenderingContext2D.prototype.arrow = function (startX, startY, endX, endY,
         else this.lineTo(x, y);
     }
 };
+
+// https://stackoverflow.com/a/66511107
+const MinHeap = {
+    /* siftDown:
+     * The node at the given index of the given heap is sifted down in
+     * its subtree until it does not have a child with a lesser value.
+     */
+    siftDown(arr, i = 0, value = arr[i]) {
+        if (i < arr.length) {
+            let key = value[0]; // Grab the value to compare with
+            while (true) {
+                // Choose the child with the least value
+                let j = i * 2 + 1;
+                if (j + 1 < arr.length && arr[j][0] > arr[j + 1][0]) j++;
+                // If no child has lesser value, then we've found the spot!
+                if (j >= arr.length || key <= arr[j][0]) break;
+                // Copy the selected child node one level up...
+                arr[i] = arr[j];
+                // ...and consider the child slot for putting our sifted node
+                i = j;
+            }
+            arr[i] = value; // Place the sifted node at the found spot
+        }
+    },
+    /* heapify:
+     * The given array is reordered in-place so that it becomes a valid heap.
+     * Elements in the given array must have a [0] property (e.g. arrays).
+     * That [0] value serves as the key to establish the heap order. The rest
+     * of such an element is just payload. It also returns the heap.
+     */
+    heapify(arr) {
+        // Establish heap with an incremental, bottom-up process
+        for (let i = arr.length >> 1; i--;) this.siftDown(arr, i);
+        return arr;
+    },
+    /* pop:
+     * Extracts the root of the given heap, and returns it (the subarray).
+     * Returns undefined if the heap is empty
+     */
+    pop(arr) {
+        // Pop the last leaf from the given heap, and exchange it with its root
+        return this.exchange(arr, arr.pop()); // Returns the old root
+    },
+    /* exchange:
+     * Replaces the root node of the given heap with the given node, and
+     * returns the previous root. Returns the given node if the heap is empty.
+     * This is similar to a call of pop and push, but is more efficient.
+     */
+    exchange(arr, value) {
+        if (!arr.length) return value;
+        // Get the root node, so to return it later
+        let oldValue = arr[0];
+        // Inject the replacing node using the sift-down process
+        this.siftDown(arr, 0, value);
+        return oldValue;
+    },
+    /* push:
+     * Inserts the given node into the given heap. It returns the heap.
+     */
+    push(arr, value) {
+        let key = value[0],
+            // First assume the insertion spot is at the very end (as a leaf)
+            i = arr.length,
+            j;
+        // Then follow the path to the root, moving values down for as long
+        // as they are greater than the value to be inserted
+        while ((j = (i - 1) >> 1) >= 0 && key < arr[j][0]) {
+            arr[i] = arr[j];
+            i = j;
+        }
+        // Found the insertion spot
+        arr[i] = value;
+        return arr;
+    }
+};
+
