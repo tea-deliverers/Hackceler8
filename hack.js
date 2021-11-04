@@ -255,6 +255,13 @@ class ProxyGame extends game.Game {
         }
         if (onlyLogic) return;
 
+        while (this.pendingInputs.length > 0) {
+            const inputs = this.pendingInputs.shift();
+            globals.state.tick(inputs);
+            this.simulatedStates.push([globals.state.oldState, inputs]);
+            ++this.simulateStateIndex;
+        }
+
         const now = Date.now();
         if (keysToggled.has('KeyT')) {
             // commit
@@ -308,8 +315,8 @@ class ProxyGame extends game.Game {
                         0, this.simulateStateIndex++);
 
                     const inputs = this.processInputs();
-                    this.simulatedStates.push([globals.state.stateCopy(), inputs]);
                     globals.state.tick(inputs);
+                    this.simulatedStates.push([globals.state.oldState, inputs]);
                     this.lastTickTime = Date.now();
                 }
             }
@@ -367,7 +374,7 @@ function navigate(targetX, targetY) {
         {'up': true, 'right': true},
         {},
     ];
-    const startTime = Date.now();
+    const endTime = Date.now() + 300;
 
     const heuristic = player => {
         const {tile} = stateTpl.map.framesets[player.frameSet].getFrame(player.frameState, player.frame);
@@ -383,7 +390,7 @@ function navigate(targetX, targetY) {
     const queue = [[heuristic(player), stateTpl.state]];
     parent.set(`${player.x}_${player.y}`, null);
 
-    while (Date.now() - startTime < 300 && queue.length > 0) {
+    while (Date.now() < endTime && queue.length > 0) {
         let [he, state] = MinHeap.pop(queue);
 
         const player = state.entities['player'];
@@ -416,7 +423,9 @@ function navigate(targetX, targetY) {
 document.addEventListener('click', function (e) {
     const offset = convertMouseToWorld(e);
     if (!offset) return;
-    if (globals.state?.state && globals.game.pendingInputs.length <= 0) {
+    if (keysToggled.has('KeyH') &&
+        globals.state?.state &&
+        globals.game.pendingInputs.length <= 0) {
         const navi = navigate(...offset);
         if (navi) globals.game.pendingInputs.push(...navi);
     }
