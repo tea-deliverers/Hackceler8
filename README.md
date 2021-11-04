@@ -1,3 +1,5 @@
+推荐使用方向键控制。
+
 - 滚轮缩放
 - <kbd>Shift</kbd> 移动地图
 - <kbd>V</kbd> 重设中心点为玩家
@@ -9,8 +11,8 @@
   - 用鼠标指向目的地，按 <kbd>`</kbd> 瞬移过去（搜索，有可能不成功）
   - <kbd>Z</kbd> 倒退
   - <kbd>X</kbd> 前进
-  - <kbd>,&lt;</kbd> 减速
-  - <kbd>.&gt;</kbd> 加速
+  - <kbd>,</kbd> 减速
+  - <kbd>.</kbd> 加速
   - <kbd>LeftCtrl</kbd> 暂时加速
   - <kbd>T</kbd> 提交
 
