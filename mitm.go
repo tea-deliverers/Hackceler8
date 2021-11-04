@@ -100,7 +100,7 @@ func main() {
 				}
 				var buf bytes.Buffer
 				buf.Write(data[:index])
-				buf.WriteString(`<script src="/hack.js"></script>`)
+				buf.WriteString(`<script src="/hack.js"></script><style>#hud {user-select: none} </style>`)
 				buf.Write(data[index:])
 				return buf.Bytes()
 			})

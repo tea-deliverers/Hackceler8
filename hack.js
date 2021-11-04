@@ -50,7 +50,37 @@ class KeyToggler extends Set {
     }
 }
 
+class KeyPresser extends Set {
+    #callbacks = new Map();
+
+    constructor() {
+        super();
+        window.addEventListener("keydown", e => {
+            if (e.ctrlKey) e.preventDefault();
+
+            if (this.#callbacks.has(e.code)) {
+                this.#callbacks.get(e.code)();
+            } else {
+                this.add(e.code);
+            }
+        })
+
+        window.addEventListener("keyup", e => {
+            this.delete(e.code);
+        })
+    }
+
+    register(key, cb) {
+        this.#callbacks.set(key, cb);
+    }
+
+    pressed(key) {
+        return this.delete(key);
+    }
+}
+
 const keysToggled = new KeyToggler();
+const keysPressed = new KeyPresser();
 
 const initWidth = RES_W;
 
@@ -58,25 +88,10 @@ class MapMover {
     offsetX = 0
     offsetY = 0
     #scale = 1
-    #shiftDown = false
 
     constructor() {
-        window.addEventListener('keydown', e => {
-            switch (e.code) {
-                case "ShiftLeft":
-                    this.#shiftDown = true;
-                    break;
-                case "KeyV":
-                    this.offsetX = this.offsetY = 0;
-                    break;
-            }
-        })
-
-        window.addEventListener('keyup', e => {
-            switch (e.code) {
-                case "ShiftLeft":
-                    this.#shiftDown = false;
-            }
+        keysPressed.register('KeyV', () => {
+            this.offsetX = this.offsetY = 0;
         })
 
         window.addEventListener('mousewheel', e => {
@@ -90,10 +105,41 @@ class MapMover {
         })
 
         window.addEventListener('mousemove', ({movementX, movementY}) => {
-            if (!this.#shiftDown) return;
+            if (!('ShiftLeft' in globals.game.keyStates)) return;
             this.offsetX -= movementX;
             this.offsetY -= movementY;
         });
+    }
+}
+
+class StateDisplayer {
+    #ele;
+    #lastState;
+
+    constructor() {
+        this.#ele = document.createElement('div');
+        this.#ele.style.position = 'absolute';
+        this.#ele.style.right = this.#ele.style.bottom = '10%';
+        this.#ele.style.color = 'white';
+        this.#ele.style.fontSize = '2em';
+        this.#ele.style.textAlign = 'right';
+        document.getElementById('hud').append(this.#ele);
+    }
+
+    refresh() {
+        let state;
+        if (!keysToggled.has('KeyH')) {
+            state = 'Live';
+        } else if (keysToggled.has('KeyT')) {
+            state = 'Committing';
+        } else if (globals.game.paused) {
+            state = `Paused<br>${globals.game.getRate().toFixed(1)}x`;
+        } else {
+            state = `Simulating<br>${globals.game.getRate().toFixed(1)}x`;
+        }
+        if (state !== this.#lastState) {
+            this.#ele.innerHTML = this.#lastState = state;
+        }
     }
 }
 
@@ -240,36 +286,89 @@ visuals.Visuals = ProxyVisuals;
 class ProxyGame extends game.Game {
     static connectionStartTick;
     static connectionStartTime;
-    pendingInputs = [];
     simulatedStates = [];
     simulateStateIndex = 0;
+    stateDisplay = new StateDisplayer();
+    accelerate = 1;
+    paused = false;
 
-    iterate(onlyLogic = false) {
-        if (!keysToggled.has('KeyH')) {
-            if (this.simulatedStates.length > 0) {
-                globals.state.state = this.simulatedStates[0][0];
-                this.simulatedStates = [];
-            }
-            this.simulateStateIndex = 0;
-            return super.iterate(onlyLogic);
-        }
-        if (onlyLogic) return;
-
-        while (this.pendingInputs.length > 0) {
-            const inputs = this.pendingInputs.shift();
+    #navigate() {
+        const {mouseX, mouseY} = globals.visuals.mouseDisplay;
+        const offset = convertMouseToWorld({clientX: mouseX, clientY: mouseY});
+        if (!offset) return;
+        const navi = navigate(...offset);
+        console.log(navi);
+        if (!navi) return;
+        while (navi.length > 0) {
+            this.simulatedStates = this.simulatedStates.splice(
+                0, this.simulateStateIndex++);
+            const inputs = navi.shift();
             globals.state.tick(inputs);
             this.simulatedStates.push([globals.state.oldState, inputs]);
-            ++this.simulateStateIndex;
         }
+    }
+
+    #visualRender() {
+        if ('KeyZ' in this.keyStates) {
+            if (this.simulateStateIndex > 0) {
+                globals.state.state = this.simulatedStates[--this.simulateStateIndex][0];
+            }
+            this.paused = true;
+            return;
+        }
+        if ('KeyX' in this.keyStates) {
+            if (this.simulateStateIndex < this.simulatedStates.length - 1) {
+                globals.state.state = this.simulatedStates[++this.simulateStateIndex][0];
+            }
+            this.paused = true;
+            return;
+        }
+
+        if ("KeyW" in this.keyStates || "ArrowUp" in this.keyStates ||
+            "KeyA" in this.keyStates || "ArrowLeft" in this.keyStates ||
+            "KeyS" in this.keyStates || "ArrowDown" in this.keyStates ||
+            "KeyD" in this.keyStates || "ArrowRight" in this.keyStates ||
+            "Space" in this.keyStates) {
+            this.paused = false;
+        } else {
+            const player = globals.state.state.entities.player;
+            if (player.solidGround && player.moveV === 0) {
+                this.paused = true;
+                return;
+            }
+        }
+
+        if (!("Escape" in this.keyStates) &&
+            !("KeyK" in this.keyStates) &&
+            !this.paused) {
+            this.simulatedStates = this.simulatedStates.splice(
+                0, this.simulateStateIndex++);
+
+            const inputs = this.processInputs();
+            globals.state.tick(inputs);
+            this.simulatedStates.push([globals.state.oldState, inputs]);
+            this.lastTickTime = Date.now();
+        }
+    }
+
+    getRate() {
+        return ('ControlLeft' in this.keyStates) ? 3 : this.accelerate;
+    }
+
+    #simulate() {
+        if (keysPressed.pressed('Backquote'))
+            this.#navigate();
 
         const now = Date.now();
         if (keysToggled.has('KeyT')) {
             // commit
-            const commitTime = ProxyGame.connectionStartTime + (
-                    globals.state.state.tick - ProxyGame.connectionStartTick) *
-                1000 / gameState.TICKS_PER_SECOND;
-            keysToggled.add('KeyP');
-            if (commitTime < now) {
+            const maxPossibleTickNumber = (
+                ProxyGame.connectionStartTick +
+                (now - ProxyGame.connectionStartTime) * gameState.TICKS_PER_SECOND / 1000
+            ) | 0; // from server logic
+
+            this.paused = true;
+            if (globals.state.state.tick < maxPossibleTickNumber) {
                 keysToggled.delete('KeyT');
                 const changes = [];
                 for (let i = 0; i < this.simulateStateIndex; ++i) {
@@ -289,39 +388,34 @@ class ProxyGame extends game.Game {
                 this.simulatedStates = this.simulatedStates.splice(this.simulateStateIndex);
                 this.simulateStateIndex = 0;
             }
-        } else if (now > this.lastTickTime + gameState.MS_PER_TICK) {
-            if ('KeyZ' in this.keyStates) {
-                if (this.simulateStateIndex > 0) {
-                    globals.state.state = this.simulatedStates[--this.simulateStateIndex][0];
-                }
-                keysToggled.add('KeyP');
-            } else if ('KeyX' in this.keyStates) {
-                if (this.simulateStateIndex < this.simulatedStates.length - 1) {
-                    globals.state.state = this.simulatedStates[++this.simulateStateIndex][0];
-                }
-                keysToggled.add('KeyP');
-            } else {
-                if ("KeyW" in this.keyStates || "ArrowUp" in this.keyStates ||
-                    "KeyA" in this.keyStates || "ArrowLeft" in this.keyStates ||
-                    "KeyS" in this.keyStates || "ArrowDown" in this.keyStates ||
-                    "KeyD" in this.keyStates || "ArrowRight" in this.keyStates ||
-                    "Space" in this.keyStates) {
-                    keysToggled.delete('KeyP');
-                }
-                if (!("Escape" in this.keyStates) &&
-                    !("KeyK" in this.keyStates) &&
-                    !keysToggled.has('KeyP')) {
-                    this.simulatedStates = this.simulatedStates.splice(
-                        0, this.simulateStateIndex++);
-
-                    const inputs = this.processInputs();
-                    globals.state.tick(inputs);
-                    this.simulatedStates.push([globals.state.oldState, inputs]);
-                    this.lastTickTime = Date.now();
-                }
-            }
-            globals.visuals.render();
+            return;
         }
+
+        if (keysPressed.pressed('Comma') && this.accelerate > 0) {
+            this.accelerate -= .1;
+        } else if (keysPressed.pressed('Period')) {
+            this.accelerate += .1;
+        }
+
+        if (now < this.lastTickTime + gameState.MS_PER_TICK / this.getRate()) return;
+
+        this.#visualRender();
+        globals.visuals.render();
+    }
+
+    iterate(onlyLogic = false) {
+        this.stateDisplay.refresh();
+
+        if (!keysToggled.has('KeyH')) {
+            if (this.simulatedStates.length > 0) {
+                globals.state.state = this.simulatedStates[0][0];
+                this.simulatedStates = [];
+            }
+            this.simulateStateIndex = 0;
+            return super.iterate(onlyLogic);
+        }
+        if (onlyLogic) return;
+        this.#simulate();
 
         /* copied from code */
         this.frameRequestID = window.requestAnimationFrame(() => {
@@ -364,37 +458,131 @@ function convertMouseToWorld({clientX, clientY}) {
     return [offsetX + viewportX, offsetY + viewportY];
 }
 
+// copied from source
+function playerTick(state, input) {
+    const gravity = 31.2 * gameState.SEC_PER_TICK
+
+    const currentX = this.x
+    const currentY = this.y
+
+    if ("right" in input) {
+        if (this.moveV < 0) {
+            this.moveV = 0  // Reset to 0 if was going the other way.
+        }
+
+        this.moveV = Math.min(
+            this.maxMovementSpeed, this.moveV + this.accelerationSpeed
+        )
+    } else if ("left" in input) {
+        if (this.moveV > 0) {
+            this.moveV = 0  // Reset to 0 if was going the other way.
+        }
+
+        this.moveV = Math.max(
+            -this.maxMovementSpeed, this.moveV - this.accelerationSpeed
+        )
+    } else {
+        if (this.moveV > 0) {
+            this.moveV = Math.max(0, this.moveV - this.stopSpeed)
+        } else {
+            this.moveV = Math.min(0, this.moveV + this.stopSpeed)
+        }
+    }
+
+    // Allow jumps only if the player is on the ground at least one tick without
+    // holding the UP arrow.
+    if (!this.canJump && this.solidGround && !("up" in input)) {
+        this.canJump = true
+    }
+
+    if (this.canJump && !this.solidGround) {
+        this.canJump = false
+    }
+
+    if (this.canJump) {
+        this.jumpV = this.pushGravity  // Push player into the ground.
+        if (("up" in input) && (this.jumpProgress == -1)) {
+            this.jumpProgress = 0  // Start the jump;
+        }
+
+    } else {
+        this.jumpV = Math.min(this.maxFallSpeed, this.jumpV + gravity)
+    }
+
+    if ("up" in input) {
+        if (this.jumpProgress != -1 && this.jumpProgress < this.jumpForceCurve.length) {
+            var oldUp = this.jumpV
+            this.jumpV -= this.jumpForceCurve[this.jumpProgress] + gravity
+            this.jumpProgress++;
+        }
+    } else {
+        this.jumpProgress = -1
+    }
+
+    // Tick the animation engine to potentially update the frame.
+    entities.animationEngines.Character.tick.call(this, state)
+
+    if (this.frameSet === undefined) {
+        throw "Animated object doesn't have a frameSet. Did you remember to set the is_frameset property on the tileset?"
+    }
+
+    const currentFrame = state.map.framesets[this.frameSet].getFrame(
+        this.frameState, this.frame
+    )
+
+    // TODO: calculatePotentialMove should actually both get the frame,
+    // and return whether "gravity" collision was hit.
+    const [
+        newPosition, solidGround, collidingEntities
+    ] = state.calculatePotentialMove(
+        [currentX, currentY],
+        [this.moveV, this.jumpV],
+        currentFrame.tile,
+        [this.id]  // Exclude this entity from colliding with itself.
+    )
+
+    this.x = newPosition[0]
+    this.y = newPosition[1]
+    this.solidGround = solidGround
+
+    // In case it wasn't possible to move vertically the whole way, cut the
+    // jump velocity.
+    // TODO: Just return the case from calculatePotentialMove instead of this
+    // check.
+    if (this.y !== currentY + this.jumpV && this.jumpV < 0) {
+        this.jumpV = 0
+    }
+}
+
 // Greedy Best First Search
 function navigate(targetX, targetY) {
     const possibleActions = [
-        {'left': true},
-        {'right': true},
-        {'up': true},
         {'up': true, 'left': true},
         {'up': true, 'right': true},
+        {'up': true},
+        {'left': true},
+        {'right': true},
         {},
     ];
     const endTime = Date.now() + 300;
 
     const heuristic = player => {
-        const {tile} = stateTpl.map.framesets[player.frameSet].getFrame(player.frameState, player.frame);
+        const {tile} = globals.map.framesets[player.frameSet].getFrame(player.frameState, player.frame);
         const box = tile.collisions[0];
         const x = box.x + player.x, y = box.y + player.y;
-        return Math.max(x - targetX, targetX - x - box.width, 0) +
-            Math.max(y - targetY, targetY - y - box.height, 0);
+        return Math.hypot(Math.max(x - targetX, targetX - x - box.width, 0),
+            Math.max(y - targetY, targetY - y - box.height, 0));
     }
 
-    const stateTpl = globals.state.duplicate();
     const parent = new Map();
-    const player = stateTpl.state.entities['player'];
-    const queue = [[heuristic(player), stateTpl.state]];
-    parent.set(`${player.x}_${player.y}`, null);
+    const player = globals.state.state.entities['player'];
+    const queue = [[heuristic(player), globals.state.state.tick, player]];
+    parent.set(`${player.x.toFixed(1)},${player.y.toFixed(1)}`, null);
 
     while (Date.now() < endTime && queue.length > 0) {
-        let [he, state] = MinHeap.pop(queue);
+        let [he, curTick, player] = MinHeap.pop(queue);
 
-        const player = state.entities['player'];
-        const coord = `${player.x}_${player.y}`;
+        const coord = `${player.x.toFixed(1)},${player.y.toFixed(1)}`;
         if (he <= 0) {
             let actions = [];
             let cur = coord;
@@ -406,30 +594,19 @@ function navigate(targetX, targetY) {
             return actions;
         }
 
-        stateTpl.state = state;
         possibleActions.forEach(action => {
-            stateTpl.tick(action);
-            const newPlayer = stateTpl.state.entities['player'];
-            const newCoord = `${newPlayer.x}_${newPlayer.y}`;
+            const newPlayer = utils.simpleDeepCopy(player);
+            const gs = new gameState.GameState(globals.map);
+            gs.state = {tick: curTick + 1, entities: globals.state.state.entities};
+            playerTick.call(newPlayer, gs, action);
+            const newCoord = `${newPlayer.x.toFixed(1)},${newPlayer.y.toFixed(1)}`;
             if (!parent.has(newCoord)) {
                 parent.set(newCoord, [coord, action]);
-                MinHeap.push(queue, [heuristic(newPlayer), stateTpl.state]);
+                MinHeap.push(queue, [heuristic(newPlayer), curTick + 1, newPlayer]);
             }
-            stateTpl.state = stateTpl.oldState;
         })
     }
 }
-
-document.addEventListener('click', function (e) {
-    const offset = convertMouseToWorld(e);
-    if (!offset) return;
-    if (keysToggled.has('KeyH') &&
-        globals.state?.state &&
-        globals.game.pendingInputs.length <= 0) {
-        const navi = navigate(...offset);
-        if (navi) globals.game.pendingInputs.push(...navi);
-    }
-});
 
 document.addEventListener('mousemove', function (e) {
     if (!globals.visuals) return;
