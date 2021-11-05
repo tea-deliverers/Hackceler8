@@ -32,7 +32,7 @@ class MouseDisplay {
 
         this.p.style.left = `${this.mouseX}px`;
         this.p.style.top = `${this.mouseY}px`;
-        this.p.innerText = `(${offsetX.toFixed(0)}, ${offsetY.toFixed(0)})`;
+        this.p.innerHTML = `(${offsetX | 0}, ${offsetY | 0})`;
     }
 }
 
@@ -56,8 +56,6 @@ class KeyPresser extends Set {
     constructor() {
         super();
         window.addEventListener("keydown", e => {
-            if (e.ctrlKey) e.preventDefault();
-
             if (this.#callbacks.has(e.code)) {
                 this.#callbacks.get(e.code)();
             } else {
@@ -106,8 +104,8 @@ class MapMover {
 
         window.addEventListener('mousemove', ({movementX, movementY}) => {
             if (!('ShiftLeft' in globals.game.keyStates)) return;
-            this.offsetX -= movementX;
-            this.offsetY -= movementY;
+            this.offsetX -= movementX * this.#scale;
+            this.offsetY -= movementY * this.#scale;
         });
     }
 }
@@ -147,6 +145,10 @@ class ProxyVisuals extends visuals.Visuals {
     mouseDisplay = new MouseDisplay();
     mapMover = new MapMover();
     challengeLink = new Map();
+
+    initializeCanvases() {
+        super.initializeCanvases();
+    }
 
     updateRes() {
         this.elEntities.width = RES_W;
@@ -221,7 +223,11 @@ class ProxyVisuals extends visuals.Visuals {
         const y = e.y - yOffset;
 
         tile.collisions.forEach(c => {
-            ctx.strokeStyle = ctx.fillStyle = 'black';
+            const gredient = this.elContext.createLinearGradient(
+                x + c.x, y + c.y, x + c.x + c.width, y + c.y + c.height);
+            gredient.addColorStop(0, 'blue');
+            gredient.addColorStop(1, 'yellow');
+            ctx.strokeStyle = gredient;
             ctx.strokeRect(x + c.x, y + c.y, c.width, c.height);
         });
 
@@ -258,6 +264,11 @@ class ProxyVisuals extends visuals.Visuals {
             /** <-- copied from source **/
 
             tile.collisions.forEach(c => {
+                const gredient = this.elContext.createLinearGradient(
+                    x + c.x, y + c.y, x + c.x + c.width, y + c.y + c.height);
+                gredient.addColorStop(0, 'blue');
+                gredient.addColorStop(1, 'yellow');
+                ctx.strokeStyle = gredient;
                 ctx.strokeRect(x + c.x, y + c.y, c.width, c.height);
             });
         })
@@ -297,8 +308,8 @@ class ProxyGame extends game.Game {
         const offset = convertMouseToWorld({clientX: mouseX, clientY: mouseY});
         if (!offset) return;
         const navi = navigate(...offset);
-        console.log(navi);
         if (!navi) return;
+        console.log([...navi]);
         while (navi.length > 0) {
             this.simulatedStates = this.simulatedStates.splice(
                 0, this.simulateStateIndex++);
@@ -332,14 +343,13 @@ class ProxyGame extends game.Game {
             this.paused = false;
         } else {
             const player = globals.state.state.entities.player;
-            if (player.solidGround && player.moveV === 0) {
+            if (player.canJump && player.moveV === 0) {
                 this.paused = true;
                 return;
             }
         }
 
-        if (!("Escape" in this.keyStates) &&
-            !("KeyK" in this.keyStates) &&
+        if (!("KeyK" in this.keyStates) &&
             !this.paused) {
             this.simulatedStates = this.simulatedStates.splice(
                 0, this.simulateStateIndex++);
@@ -347,7 +357,6 @@ class ProxyGame extends game.Game {
             const inputs = this.processInputs();
             globals.state.tick(inputs);
             this.simulatedStates.push([globals.state.oldState, inputs]);
-            this.lastTickTime = Date.now();
         }
     }
 
@@ -400,6 +409,7 @@ class ProxyGame extends game.Game {
         if (now < this.lastTickTime + gameState.MS_PER_TICK / this.getRate()) return;
 
         this.#visualRender();
+        this.lastTickTime = Date.now();
         globals.visuals.render();
     }
 
@@ -555,54 +565,145 @@ function playerTick(state, input) {
 }
 
 // Greedy Best First Search
+function hashPlayer(player) {
+    return `${player.x.toFixed(1)},${player.y.toFixed(1)}}`;
+}
+
 function navigate(targetX, targetY) {
-    const possibleActions = [
-        {'up': true, 'left': true},
-        {'up': true, 'right': true},
-        {'up': true},
-        {'left': true},
-        {'right': true},
-        {},
-    ];
     const endTime = Date.now() + 300;
 
-    const heuristic = player => {
+    const getPosition = player => {
         const {tile} = globals.map.framesets[player.frameSet].getFrame(player.frameState, player.frame);
         const box = tile.collisions[0];
         const x = box.x + player.x, y = box.y + player.y;
-        return Math.hypot(Math.max(x - targetX, targetX - x - box.width, 0),
-            Math.max(y - targetY, targetY - y - box.height, 0));
+        return [x + box.width / 2, y + box.height / 2];
     }
 
-    const parent = new Map();
-    const player = globals.state.state.entities['player'];
-    const queue = [[heuristic(player), globals.state.state.tick, player]];
-    parent.set(`${player.x.toFixed(1)},${player.y.toFixed(1)}`, null);
+    const stateTpl = globals.state;
+    const player = stateTpl.state.entities['player'];
+    const distance = new Map();
+    const granularity = 8;
 
-    while (Date.now() < endTime && queue.length > 0) {
-        let [he, curTick, player] = MinHeap.pop(queue);
-
-        const coord = `${player.x.toFixed(1)},${player.y.toFixed(1)}`;
-        if (he <= 0) {
-            let actions = [];
-            let cur = coord;
-            while (parent.get(cur) !== null) {
-                const [prev, action] = parent.get(cur);
-                actions.unshift(action);
-                cur = prev;
+    const heuristic = player => {
+        // const [x, y] = getPosition(player);
+        // const gridX = x / granularity | 0, gridY = y / granularity | 0;
+        // const dist = distance.get(`${gridX},${gridY}`);
+        // if (dist) return dist + Math.hypot(x - (gridX + .5) * granularity, y - (gridY + .5) * granularity);
+        const {tile} = globals.map.framesets[player.frameSet].getFrame(player.frameState, player.frame);
+        const box = tile.collisions[0];
+        const x = box.x + player.x, y = box.y + player.y;
+        let max = -Infinity;
+        for (let i = 0; i < box.width; i += granularity) {
+            for (let j = 0; j < box.height; j += granularity) {
+                const gridX = (x + i) / granularity | 0, gridY = (y + j) / granularity | 0;
+                const coord = `${gridX},${gridY}`
+                if (distance.has(coord)) {
+                    max = Math.max(max, distance.get(coord));
+                }
             }
-            return actions;
+        }
+        return max === -Infinity ? undefined : max;
+    }
+
+    const playerCoord = getPosition(player);
+    const playerCoordX = playerCoord[0] / granularity | 0, playerCoordY = playerCoord[1] / granularity | 0;
+    { // 1st part, dijkstra
+        const boundX = globals.map.canvasW / granularity | 0, boundY = globals.map.canvasH / granularity | 0;
+        const tX = targetX / granularity | 0, tY = targetY / granularity | 0;
+        const queue = [[Math.abs(playerCoordX - tX) + Math.abs(playerCoordY - tY), tX, tY]];
+        const visited = new Set();
+        distance.set(`${tX},${tY}`, 0);
+        while (queue.length > 0) {
+            if (Date.now() > endTime) return;
+            const [, frontX, frontY] = MinHeap.pop(queue);
+            if (frontX === playerCoordX && frontY === playerCoordY) break;
+
+            const coord = `${frontX},${frontY}`;
+            if (visited.has(coord)) continue;
+            visited.add(coord);
+            const dist = distance.get(coord);
+
+            [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([dx, dy]) => {
+                const newX = frontX + dx, newY = frontY + dy;
+                if (newX < 0 || newX >= boundX || newY < 0 || newY >= boundY) return;
+                const bounding = [
+                    (Math.min(newX, frontX) + .5) * granularity,
+                    (Math.min(newY, frontY) + .5) * granularity,
+                    Math.abs(dx) * granularity || 1e-9,
+                    Math.abs(dy) * granularity || 1e-9,
+                ];
+                const mapRects = globals.map.getCollisionRectsForArea(...bounding);
+                if (mapRects.length > 0) return;
+                const [hardRects,] = stateTpl.getEntityCollisionRectsForArea(
+                    ...bounding, [player.id]
+                );
+                if (hardRects.length > 0) return;
+
+                const newLength = dist + Math.hypot(dx, dy);
+                const newCoord = `${newX},${newY}`;
+                if (!distance.has(newCoord) || distance.get(newCoord) > newLength) {
+                    distance.set(newCoord, newLength);
+                    MinHeap.push(queue, [
+                        newLength +
+                        Math.hypot(playerCoordX - newX, playerCoordY - newY), newX, newY]);
+                }
+            });
+        }
+    }
+    const initDist = heuristic(player);
+    console.log(initDist);
+    if (!initDist) return;
+
+    const possibleActions = [
+        {},
+        {'left': true},
+        {'right': true},
+        {'up': true},
+        {'up': true, 'left': true},
+        {'up': true, 'right': true},
+    ];
+
+    const parent = new Map();
+    const queue = [[initDist, stateTpl.state.tick, player]];
+    parent.set(hashPlayer(player), null);
+    const pressingLength = 5;
+    const gs = new gameState.GameState(globals.map);
+
+    while (queue.length > 0) {
+        if (Date.now() > endTime) return;
+        let [, curTick, player] = MinHeap.pop(queue);
+
+        const coord = hashPlayer(player);
+        {
+            const {tile} = globals.map.framesets[player.frameSet].getFrame(player.frameState, player.frame);
+            const box = tile.collisions[0];
+            const x = box.x + player.x, y = box.y + player.y;
+            if (x <= targetX && targetX < x + box.width &&
+                y <= targetY && targetY < y + box.height) {
+                let actions = [];
+                let cur = coord;
+                while (parent.get(cur) !== null) {
+                    const [prev, action] = parent.get(cur);
+                    for (let i = 0; i < pressingLength; i++) actions.unshift(action);
+                    cur = prev;
+                }
+                return actions;
+            }
         }
 
         possibleActions.forEach(action => {
             const newPlayer = utils.simpleDeepCopy(player);
-            const gs = new gameState.GameState(globals.map);
-            gs.state = {tick: curTick + 1, entities: globals.state.state.entities};
-            playerTick.call(newPlayer, gs, action);
-            const newCoord = `${newPlayer.x.toFixed(1)},${newPlayer.y.toFixed(1)}`;
+            for (let i = 1; i <= pressingLength; i++) {
+                gs.state = {tick: curTick + i, entities: globals.state.state.entities};
+                playerTick.call(newPlayer, gs, action);
+            }
+            const newCoord = hashPlayer(newPlayer);
             if (!parent.has(newCoord)) {
-                parent.set(newCoord, [coord, action]);
-                MinHeap.push(queue, [heuristic(newPlayer), curTick + 1, newPlayer]);
+                const newH = heuristic(newPlayer);
+                if (newH) {
+                    parent.set(newCoord, [coord, action]);
+                    MinHeap.push(queue, [newH, curTick + pressingLength, newPlayer]);
+                }
             }
         })
     }
@@ -613,6 +714,11 @@ document.addEventListener('mousemove', function (e) {
     const disp = globals.visuals.mouseDisplay;
     disp.mouseX = e.clientX;
     disp.mouseY = e.clientY;
+});
+
+window.addEventListener('beforeunload', function (e) {
+    e.preventDefault();
+    return e.returnValue = 'dont close'
 });
 
 // https://github.com/frogcat/canvas-arrow
