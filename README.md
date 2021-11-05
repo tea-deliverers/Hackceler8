@@ -3,7 +3,7 @@
 - 滚轮缩放
 - <kbd>Shift</kbd> 移动地图
 - <kbd>V</kbd> 重设中心点为玩家
-- <kbd>B</kbd> 显示 Entity
+- <kbd>B</kbd> 显示 `Entity`
 - <kbd>H</kbd> 开启模拟模式
 
   在模拟模式下：
@@ -17,3 +17,13 @@
   - <kbd>T</kbd> 提交
 
   再次按 <kbd>H</kbd> 重新与服务端同步
+
+蓝黄色方框：碰撞盒
+
+白色线：连接 `Terminal` 和 `FlagConsole`
+
+紫红色线：`Portal` 指向其目的地
+
+绿色线：连接玩家和 `Key`
+
+橙色线：连接 `KeyReceptacle` 和其控制的 `Entity`

@@ -40,6 +40,8 @@ class KeyToggler extends Set {
     constructor() {
         super();
 
+        this.add('KeyH');
+
         window.addEventListener("keypress", e => {
             if (this.has(e.code)) {
                 this.delete(e.code);
@@ -56,6 +58,8 @@ class KeyPresser extends Set {
     constructor() {
         super();
         window.addEventListener("keydown", e => {
+            if (e.code === "Tab") e.preventDefault();
+
             if (this.#callbacks.has(e.code)) {
                 this.#callbacks.get(e.code)();
             } else {
@@ -87,10 +91,12 @@ class MapMover {
     offsetY = 0
     #scale = 1
 
+    resetView() {
+        this.offsetX = this.offsetY = 0;
+    }
+
     constructor() {
-        keysPressed.register('KeyV', () => {
-            this.offsetX = this.offsetY = 0;
-        })
+        keysPressed.register('KeyV', this.resetView);
 
         window.addEventListener('mousewheel', e => {
             if (!globals.visuals) return;
@@ -145,6 +151,7 @@ class ProxyVisuals extends visuals.Visuals {
     mouseDisplay = new MouseDisplay();
     mapMover = new MapMover();
     challengeLink = new Map();
+    receptacleLink = new Map();
 
     initializeCanvases() {
         super.initializeCanvases();
@@ -161,7 +168,9 @@ class ProxyVisuals extends visuals.Visuals {
 
     renderEntity(e) {
         const ret = super.renderEntity(e);
-        const skipCheck = ["Terminal", "FlagConsole", "Portal"].includes(e.type);
+        const skipCheck = [
+            "Terminal", "FlagConsole", "Portal", "Key", "KeyReceptacle", "Door"
+        ].includes(e.type);
 
         /** copied from source --> **/
         let outView = e.x > this.viewportX + RES_W ||
@@ -190,14 +199,39 @@ class ProxyVisuals extends visuals.Visuals {
         const ctx = this.elContext;
         /** <-- copied from source **/
 
-        if (e.type === "Terminal" || e.type === "FlagConsole") {
+        if (e.type === "Key") {
+            if (!e.pickupAble) return;
+            const {x, y} = globals.state.state.entities.player;
+            const {tileW, tileH} = globals.map.framesets.player.tileset;
+            ctx.strokeStyle = 'green';
+            ctx.beginPath();
+            ctx.moveTo(x + tileW / 2 - xOffset, y + tileH / 2 - yOffset);
+            ctx.lineTo(e.x + tile.tileW / 2 - xOffset, e.y + tile.tileH / 2 - yOffset);
+            ctx.stroke();
+        } else if (e.type === "KeyReceptacle") {
+            const midX = e.x + tile.tileW / 2, midY = e.y + tile.tileH / 2;
+            e.subscribers?.forEach(sub => {
+                this.receptacleLink.set(sub, [midX, midY]);
+            });
+        } else if (e.type === "Door") {
+            if (this.receptacleLink.has(e.id)) {
+                const midX = e.x + tile.tileW / 2, midY = e.y + tile.tileH / 2;
+                const [x, y] = this.receptacleLink.get(e.id);
+
+                ctx.strokeStyle = 'orange';
+                ctx.beginPath();
+                ctx.moveTo(midX - xOffset, midY - yOffset);
+                ctx.lineTo(x - xOffset, y - yOffset);
+                ctx.stroke();
+            }
+        } else if (e.type === "Terminal" || e.type === "FlagConsole") {
             const chal = e.challengeID;
             const midX = e.x + tile.tileW / 2, midY = e.y + tile.tileH / 2;
             if (this.challengeLink.has(chal)) {
                 const [oMidX, oMidY] = this.challengeLink.get(chal);
                 this.challengeLink.delete(chal);
 
-                ctx.strokeStyle = chal.substr(5);
+                ctx.strokeStyle = 'white';
                 ctx.beginPath();
                 ctx.moveTo(midX - xOffset, midY - yOffset);
                 ctx.lineTo(oMidX - xOffset, oMidY - yOffset);
@@ -205,9 +239,7 @@ class ProxyVisuals extends visuals.Visuals {
             } else {
                 this.challengeLink.set(chal, [midX, midY]);
             }
-        }
-
-        if (e.type === "Portal") {
+        } else if (e.type === "Portal") {
             const midX = e.x + tile.tileW / 2, midY = e.y + tile.tileH / 2;
             ctx.fillStyle = 'magenta';
             ctx.beginPath();
@@ -308,8 +340,10 @@ class ProxyGame extends game.Game {
         const offset = convertMouseToWorld({clientX: mouseX, clientY: mouseY});
         if (!offset) return;
         const navi = navigate(...offset);
-        if (!navi) return;
-        console.log([...navi]);
+        if (!navi) {
+            console.warn("cannot find path");
+            return;
+        }
         while (navi.length > 0) {
             this.simulatedStates = this.simulatedStates.splice(
                 0, this.simulateStateIndex++);
@@ -317,6 +351,7 @@ class ProxyGame extends game.Game {
             globals.state.tick(inputs);
             this.simulatedStates.push([globals.state.oldState, inputs]);
         }
+        globals.visuals.mapMover.resetView();
     }
 
     #visualRender() {
@@ -570,7 +605,7 @@ function hashPlayer(player) {
 }
 
 function navigate(targetX, targetY) {
-    const endTime = Date.now() + 300;
+    const endTime = Date.now() + 500;
 
     const getPosition = player => {
         const {tile} = globals.map.framesets[player.frameSet].getFrame(player.frameState, player.frame);
