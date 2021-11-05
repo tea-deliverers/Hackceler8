@@ -1,0 +1,7 @@
+div#game {
+    filter: none !important;
+}
+
+div#hud {
+    user-select: none
+}

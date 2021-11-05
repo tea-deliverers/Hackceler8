@@ -96,7 +96,7 @@ class MapMover {
     }
 
     constructor() {
-        keysPressed.register('KeyV', this.resetView);
+        keysPressed.register('KeyV', () => this.resetView());
 
         window.addEventListener('mousewheel', e => {
             if (!globals.visuals) return;
@@ -296,6 +296,7 @@ class ProxyVisuals extends visuals.Visuals {
             /** <-- copied from source **/
 
             tile.collisions.forEach(c => {
+                if (c.type) return;
                 const gredient = this.elContext.createLinearGradient(
                     x + c.x, y + c.y, x + c.x + c.width, y + c.y + c.height);
                 gredient.addColorStop(0, 'blue');
@@ -341,7 +342,7 @@ class ProxyGame extends game.Game {
         if (!offset) return;
         const navi = navigate(...offset);
         if (!navi) {
-            console.warn("cannot find path");
+            document.body.style.cursor = "not-allowed";
             return;
         }
         while (navi.length > 0) {
@@ -374,7 +375,7 @@ class ProxyGame extends game.Game {
             "KeyA" in this.keyStates || "ArrowLeft" in this.keyStates ||
             "KeyS" in this.keyStates || "ArrowDown" in this.keyStates ||
             "KeyD" in this.keyStates || "ArrowRight" in this.keyStates ||
-            "Space" in this.keyStates) {
+            "Space" in this.keyStates || this.auxiliaryInputQueue.length > 0) {
             this.paused = false;
         } else {
             const player = globals.state.state.entities.player;
@@ -425,10 +426,12 @@ class ProxyGame extends game.Game {
                     }
                     changes.push({inputs: inp, state: diff});
                 }
-                main.wsSend({
-                    type: "ticks",
-                    changes: changes
-                });
+                if (changes.length > 0) {
+                    main.wsSend({
+                        type: "ticks",
+                        changes: changes
+                    });
+                }
                 this.simulatedStates = this.simulatedStates.splice(this.simulateStateIndex);
                 this.simulateStateIndex = 0;
             }
@@ -453,6 +456,10 @@ class ProxyGame extends game.Game {
 
         if (!keysToggled.has('KeyH')) {
             if (this.simulatedStates.length > 0) {
+                if (!confirm("还有未提交的更改，确定回退吗？")) {
+                    keysToggled.add('KeyH');
+                    return;
+                }
                 globals.state.state = this.simulatedStates[0][0];
                 this.simulatedStates = [];
             }
@@ -488,6 +495,9 @@ main.wsOnMessage = function (e) {
         case "startState":
             ProxyGame.connectionStartTick = data.state.tick;
             break
+        case "terminal":
+            if (data.data) terminalRedir.send(data.data);
+            break;
     }
 
     return oldWsOnMsg(e);
@@ -604,8 +614,10 @@ function hashPlayer(player) {
     return `${player.x.toFixed(1)},${player.y.toFixed(1)}}`;
 }
 
+let searchTimeout = 500;
+
 function navigate(targetX, targetY) {
-    const endTime = Date.now() + 500;
+    const endTime = Date.now() + searchTimeout;
 
     const getPosition = player => {
         const {tile} = globals.map.framesets[player.frameSet].getFrame(player.frameState, player.frame);
@@ -686,7 +698,6 @@ function navigate(targetX, targetY) {
         }
     }
     const initDist = heuristic(player);
-    console.log(initDist);
     if (!initDist) return;
 
     const possibleActions = [
@@ -746,6 +757,7 @@ function navigate(targetX, targetY) {
 
 document.addEventListener('mousemove', function (e) {
     if (!globals.visuals) return;
+    document.body.style.removeProperty("cursor");
     const disp = globals.visuals.mouseDisplay;
     disp.mouseX = e.clientX;
     disp.mouseY = e.clientY;
@@ -755,6 +767,46 @@ window.addEventListener('beforeunload', function (e) {
     e.preventDefault();
     return e.returnValue = 'dont close'
 });
+
+class TerminalRedir {
+    constructor() {
+        this.reconnect()
+    }
+
+    reconnect() {
+        const loc = document.location;
+        const protocol = loc.protocol === "http:" ? "ws:" : "wss:";
+        this.ws = new WebSocket(`${protocol}//${loc.host}/aux`);
+        this.ws.onmessage = e => {
+            globals.game.auxiliaryInputQueue.push({
+                type: "terminal",
+                value: e.data,
+            })
+        }
+        this.ws.onclose = () => {
+            setTimeout(() => {
+                this.reconnect()
+            }, 500)
+        }
+    }
+
+    send(data) {
+        this.ws.send(data);
+    }
+}
+
+const terminalRedir = new TerminalRedir();
+
+function closeFloat() {
+    const {terminals, flagConsoles, gameSaver} = globals.game;
+    terminals.forEach(e => {
+        e.hide()
+    });
+    flagConsoles.forEach(e => {
+        e.hide()
+    });
+    gameSaver.hide();
+}
 
 // https://github.com/frogcat/canvas-arrow
 CanvasRenderingContext2D.prototype.arrow = function (startX, startY, endX, endY, controlPoints) {

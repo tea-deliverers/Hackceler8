@@ -1,3 +1,6 @@
+# Hackceler8 Game Tools
+
+## 操作
 推荐使用方向键控制。
 
 - 滚轮缩放
@@ -18,6 +21,7 @@
 
   再次按 <kbd>H</kbd> 重新与服务端同步
 
+## 显示
 蓝黄色方框：碰撞盒
 
 白色线：连接 `Terminal` 和 `FlagConsole`
@@ -27,3 +31,11 @@
 绿色线：连接玩家和 `Key`
 
 橙色线：连接 `KeyReceptacle` 和其控制的 `Entity`
+
+## 浏览器控制台
+
+- `closeFloat()` 关闭所有浮动窗口
+
+## `Terminal` 转发
+
+转发到 `localServer` 下。数据均以 hex 编码，换行结尾。

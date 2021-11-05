@@ -1,14 +1,19 @@
 package main
 
 import (
+	"bufio"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -102,4 +107,98 @@ type ServerMsg map[string]json.RawMessage
 func (s ServerMsg) getString(key string) (str string, err error) {
 	err = json.Unmarshal(s[key], &str)
 	return
+}
+
+type localTerminal struct {
+	conn     net.Conn
+	readCond *sync.Cond
+}
+
+func newLocalTerminal() *localTerminal {
+	return &localTerminal{readCond: &sync.Cond{L: &sync.Mutex{}}}
+}
+
+func (l *localTerminal) connect() (err error) {
+	l.conn, err = net.Dial("tcp", localServer)
+	return
+}
+
+func (l *localTerminal) Read(p []byte) (int, error) {
+	l.readCond.L.Lock()
+	for l.conn == nil {
+		l.readCond.Wait()
+	}
+	l.readCond.L.Unlock()
+	return l.conn.Read(p)
+}
+
+func (l *localTerminal) Write(p []byte) (int, error) {
+	l.readCond.L.Lock()
+	if l.conn == nil {
+		err := l.connect()
+		if err != nil {
+			l.readCond.L.Unlock()
+			return 0, err
+		}
+		l.readCond.Broadcast()
+	}
+	l.readCond.L.Unlock()
+	return l.conn.Write(p)
+}
+
+func (l *localTerminal) Close() error {
+	l.readCond.L.Lock()
+	err := l.conn.Close()
+	l.conn = nil
+	l.readCond.L.Unlock()
+	return err
+}
+
+func aux(writer http.ResponseWriter, request *http.Request) {
+	client, err := upgrader.Upgrade(writer, request, nil)
+	if err != nil {
+		log.Print("aux: ", err)
+		return
+	}
+	defer client.Close()
+
+	terminal := newLocalTerminal()
+
+	ctx, cancel := context.WithCancel(request.Context())
+	go func() {
+		defer cancel()
+		for {
+			_, message, err := client.ReadMessage()
+			if err != nil {
+				log.Println("read client:", err)
+				return
+			}
+			//log.Printf("recv client: %s", message)'
+
+			_, err = terminal.Write(append(message, '\n'))
+			if err != nil {
+				log.Println("write local:", err)
+			}
+		}
+	}()
+
+	go func() {
+		defer cancel()
+		for {
+			scanner := bufio.NewScanner(terminal)
+			for scanner.Scan() {
+				err := client.WriteMessage(websocket.TextMessage, scanner.Bytes())
+				if err != nil {
+					log.Println("write client:", err)
+					return
+				}
+			}
+			terminal.Close()
+			if scanner.Err() != nil {
+				log.Println("read local:", scanner.Err())
+			}
+		}
+	}()
+
+	<-ctx.Done()
 }

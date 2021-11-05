@@ -11,7 +11,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const gameServer = "http://localhost:4567"
+const (
+	gameServer  = "http://localhost:4567"
+	localServer = "localhost:2333"
+)
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(*http.Request) bool {
@@ -62,15 +65,6 @@ func wsMitm(writer http.ResponseWriter, request *http.Request) {
 	<-ctx.Done()
 }
 
-func aux(writer http.ResponseWriter, request *http.Request) {
-	client, err := upgrader.Upgrade(writer, request, nil)
-	if err != nil {
-		log.Print("aux: ", err)
-		return
-	}
-	defer client.Close()
-}
-
 func main() {
 	gameServerUri, _ := url.ParseRequestURI(gameServer)
 	proxy := httputil.NewSingleHostReverseProxy(gameServerUri)
@@ -100,7 +94,7 @@ func main() {
 				}
 				var buf bytes.Buffer
 				buf.Write(data[:index])
-				buf.WriteString(`<script src="/hack.js"></script><style>#hud {user-select: none} </style>`)
+				buf.WriteString(`<script src="/hack.js"></script><link rel="stylesheet" href="/hack.css">`)
 				buf.Write(data[index:])
 				return buf.Bytes()
 			})
@@ -111,12 +105,18 @@ func main() {
 	log.Fatal(http.ListenAndServe("localhost:12450",
 		http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			if len(request.Header.Values("Upgrade")) > 0 {
-				wsMitm(writer, request)
+				if request.URL.Path == "/aux" {
+					aux(writer, request)
+				} else {
+					wsMitm(writer, request)
+				}
 				return
 			}
 			switch request.URL.Path {
 			case "/hack.js":
 				http.ServeFile(writer, request, "hack.js")
+			case "/hack.css":
+				http.ServeFile(writer, request, "hack.css")
 			default:
 				proxy.ServeHTTP(writer, request)
 			}
