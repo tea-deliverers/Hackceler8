@@ -614,7 +614,7 @@ function playerTick(state, input) {
 
 // Greedy Best First Search
 function hashPlayer(player) {
-    return `${player.x.toFixed(1)},${player.y.toFixed(1)}}`;
+    return `${player.x.toFixed(1)},${player.y.toFixed(1)}`;
 }
 
 let searchTimeout = 500;
@@ -657,7 +657,7 @@ function navigate(targetX, targetY) {
 
     const playerCoord = getPosition(player);
     const playerCoordX = playerCoord[0] / granularity | 0, playerCoordY = playerCoord[1] / granularity | 0;
-    { // 1st part, dijkstra
+    { // 1st part, a*
         const boundX = globals.map.canvasW / granularity | 0, boundY = globals.map.canvasH / granularity | 0;
         const tX = targetX / granularity | 0, tY = targetY / granularity | 0;
         const queue = [[Math.abs(playerCoordX - tX) + Math.abs(playerCoordY - tY), tX, tY]];
