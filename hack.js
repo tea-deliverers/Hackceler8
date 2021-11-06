@@ -642,17 +642,20 @@ function navigate(targetX, targetY) {
         const {tile} = globals.map.framesets[player.frameSet].getFrame(player.frameState, player.frame);
         const box = tile.collisions[0];
         const x = box.x + player.x, y = box.y + player.y;
-        let max = -Infinity;
-        for (let i = 0; i < box.width; i += granularity) {
-            for (let j = 0; j < box.height; j += granularity) {
+        let min = Infinity;
+        const c = granularity * 6
+        for (let i = -c; i < box.width + c; i += granularity) {
+            for (let j = -c; j < box.height + c; j += granularity) {
                 const gridX = (x + i) / granularity | 0, gridY = (y + j) / granularity | 0;
                 const coord = `${gridX},${gridY}`
                 if (distance.has(coord)) {
-                    max = Math.max(max, distance.get(coord));
+                    const xt = (gridX + .5) * granularity - x
+                    const yt = (gridY + .5) * granularity - y
+                    min = Math.min(min, distance.get(coord) + Math.hypot(Math.max(-xt, xt - box.width, 0), Math.max(-yt, yt - box.height, 0)) / granularity);
                 }
             }
         }
-        return max === -Infinity ? undefined : max;
+        return min === Infinity ? undefined : min;
     }
 
     const playerCoord = getPosition(player);
@@ -662,6 +665,35 @@ function navigate(targetX, targetY) {
         const tX = targetX / granularity | 0, tY = targetY / granularity | 0;
         const queue = [[Math.abs(playerCoordX - tX) + Math.abs(playerCoordY - tY), tX, tY]];
         const visited = new Set();
+        const heightCache = new Map();
+        const height = (x, y, limit = 50) => {
+            if (!limit) return 0
+            if (x < 0 || x >= boundX || y < 0 || y >= boundY) return 0
+            const coord = `${x},${y}`
+            if (heightCache.has(coord))
+                return heightCache.get(coord)
+            const bounding = [
+                (x + .5) * granularity,
+                (y + .5) * granularity,
+                1e-9,
+                granularity,
+            ];
+            const mapRects = globals.map.getCollisionRectsForArea(...bounding);
+            if (mapRects.length > 0) {
+                heightCache.set(coord, 0)
+                return 0
+            }
+            const [hardRects,] = stateTpl.getEntityCollisionRectsForArea(
+                ...bounding, [player.id]
+            );
+            if (hardRects.length > 0) {
+                heightCache.set(coord, 0)
+                return 0
+            }
+            const res = height(x, y + 1, limit - 1) + 1
+            heightCache.set(coord, res)
+            return res
+        };
         distance.set(`${tX},${tY}`, 0);
         while (queue.length > 0) {
             if (Date.now() > endTime) return;
@@ -673,7 +705,11 @@ function navigate(targetX, targetY) {
             visited.add(coord);
             const dist = distance.get(coord);
 
-            [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([dx, dy]) => {
+            [
+                [0, 1], [0, -1], [1, 0], [-1, 0],
+                [12, 0], [-12, 0],
+                [0, 4], [0, -4],
+            ].forEach(([dx, dy]) => {
                 const newX = frontX + dx, newY = frontY + dy;
                 if (newX < 0 || newX >= boundX || newY < 0 || newY >= boundY) return;
                 const bounding = [
@@ -689,13 +725,15 @@ function navigate(targetX, targetY) {
                 );
                 if (hardRects.length > 0) return;
 
-                const newLength = dist + Math.hypot(dx, dy);
+                let len = Math.hypot(dx, dy);
+                len += Math.pow(Math.min(32, height(newX, newY)), 1.7) // give a punish for flying
+                const newLength = dist + len;
                 const newCoord = `${newX},${newY}`;
                 if (!distance.has(newCoord) || distance.get(newCoord) > newLength) {
                     distance.set(newCoord, newLength);
                     MinHeap.push(queue, [
                         newLength +
-                        Math.hypot(playerCoordX - newX, playerCoordY - newY), newX, newY]);
+                        Math.hypot(playerCoordX - newX, playerCoordY - newY) * 5.5, newX, newY]); // make A* (almostly) consistent
                 }
             });
         }
