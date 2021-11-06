@@ -270,7 +270,8 @@ class ProxyVisuals extends visuals.Visuals {
             ctx.fillText(e.id, x, y + tile.tileH);
 
             ctx.textBaseline = 'top';
-            ctx.fillText(e.type, x, y);
+            const titleText = ['FlagConsole', 'Terminal'].includes(e.type) ? (e.type + ': ' + e.challengeID) : e.type;
+            ctx.fillText(titleText, x, y);
 
             ctx.strokeRect(x, y, tile.tileW, tile.tileH);
         }
