@@ -615,7 +615,8 @@ function playerTick(state, input) {
 
 // Greedy Best First Search
 function hashPlayer(player) {
-    return `${player.x.toFixed(1)},${player.y.toFixed(1)}`;
+    const step = 4
+    return `${Math.floor(player.x / step)},${Math.floor(player.y / step)}`;
 }
 
 let searchTimeout = 500;
@@ -633,7 +634,7 @@ function navigate(targetX, targetY) {
     const stateTpl = globals.state;
     const player = stateTpl.state.entities['player'];
     const distance = new Map();
-    const granularity = 8;
+    const granularity = 16;
 
     const heuristic = player => {
         // const [x, y] = getPosition(player);
@@ -644,9 +645,10 @@ function navigate(targetX, targetY) {
         const box = tile.collisions[0];
         const x = box.x + player.x, y = box.y + player.y;
         let min = Infinity;
-        const c = granularity * 6
-        for (let i = -c; i < box.width + c; i += granularity) {
-            for (let j = -c; j < box.height + c; j += granularity) {
+        const cx = granularity * 12
+        const cy = granularity * 4
+        for (let i = -cx; i < box.width + cx; i += granularity) {
+            for (let j = -cy; j < box.height + cy; j += granularity) {
                 const gridX = (x + i) / granularity | 0, gridY = (y + j) / granularity | 0;
                 const coord = `${gridX},${gridY}`
                 if (distance.has(coord)) {
@@ -739,6 +741,7 @@ function navigate(targetX, targetY) {
             });
         }
     }
+    //console.log(Date.now() - (endTime - searchTimeout))
     const initDist = heuristic(player);
     if (!initDist) return;
 
@@ -775,6 +778,7 @@ function navigate(targetX, targetY) {
                     for (let i = 0; i < pressingLength; i++) actions.unshift(action);
                     cur = prev;
                 }
+                //console.log(Date.now() - (endTime - searchTimeout))
                 return actions;
             }
         }
