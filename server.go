@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -110,59 +111,86 @@ func (s ServerMsg) getString(key string) (str string, err error) {
 }
 
 type localTerminal struct {
-	conn     net.Conn
-	readCond *sync.Cond
+	l    net.Listener
+	conn net.Conn
+	cond *sync.Cond
 }
 
-func newLocalTerminal() *localTerminal {
-	return &localTerminal{readCond: &sync.Cond{L: &sync.Mutex{}}}
+func newLocalTerminal() (*localTerminal, error) {
+	l, err := net.Listen("tcp", terminalListen)
+	if err != nil {
+		return nil, err
+	}
+	term := &localTerminal{l: l, cond: sync.NewCond(&sync.Mutex{})}
+	go term.accept()
+	return term, nil
 }
 
-func (l *localTerminal) connect() (err error) {
-	l.conn, err = net.Dial("tcp", localServer)
-	return
+func (l *localTerminal) accept() {
+	for {
+		conn, err := l.l.Accept()
+		if err != nil {
+			log.Print(err)
+			break
+		}
+		l.cond.L.Lock()
+		l.conn = conn
+		l.cond.Broadcast()
+		l.cond.L.Unlock()
+	}
 }
 
 func (l *localTerminal) Read(p []byte) (int, error) {
-	l.readCond.L.Lock()
+	l.cond.L.Lock()
 	for l.conn == nil {
-		l.readCond.Wait()
+		l.cond.Wait()
 	}
-	l.readCond.L.Unlock()
-	return l.conn.Read(p)
+	conn := l.conn
+	l.cond.L.Unlock()
+	n, err := conn.Read(p)
+	if err != nil {
+		l.conn = nil
+	}
+	return n, err
 }
 
 func (l *localTerminal) Write(p []byte) (int, error) {
-	l.readCond.L.Lock()
+	l.cond.L.Lock()
+	defer l.cond.L.Unlock()
 	if l.conn == nil {
-		err := l.connect()
-		if err != nil {
-			l.readCond.L.Unlock()
-			return 0, err
-		}
-		l.readCond.Broadcast()
+		return 0, errors.New("no remote")
 	}
-	l.readCond.L.Unlock()
-	return l.conn.Write(p)
+	n, err := l.conn.Write(p)
+	if err != nil {
+		l.conn = nil
+	}
+	return n, err
 }
 
 func (l *localTerminal) Close() error {
-	l.readCond.L.Lock()
-	err := l.conn.Close()
-	l.conn = nil
-	l.readCond.L.Unlock()
-	return err
+	l.cond.L.Lock()
+	defer l.cond.L.Unlock()
+	if l.conn != nil {
+		l.conn.Close()
+		l.conn = nil
+	}
+	return l.l.Close()
 }
 
 func aux(writer http.ResponseWriter, request *http.Request) {
+	terminal, err := newLocalTerminal()
+	if err != nil {
+		log.Print("terminal: ", err)
+		return
+	}
+	defer terminal.Close()
+
 	client, err := upgrader.Upgrade(writer, request, nil)
 	if err != nil {
 		log.Print("aux: ", err)
 		return
 	}
 	defer client.Close()
-
-	terminal := newLocalTerminal()
 
 	ctx, cancel := context.WithCancel(request.Context())
 	go func() {
@@ -177,7 +205,7 @@ func aux(writer http.ResponseWriter, request *http.Request) {
 
 			_, err = terminal.Write(append(message, '\n'))
 			if err != nil {
-				log.Println("write local:", err)
+				log.Println("write terminal: ", err)
 			}
 		}
 	}()
@@ -193,9 +221,8 @@ func aux(writer http.ResponseWriter, request *http.Request) {
 					return
 				}
 			}
-			terminal.Close()
 			if scanner.Err() != nil {
-				log.Println("read local:", scanner.Err())
+				log.Println("read local: ", scanner.Err())
 			}
 		}
 	}()

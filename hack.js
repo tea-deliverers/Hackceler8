@@ -458,6 +458,9 @@ class ProxyGame extends game.Game {
             if (this.simulatedStates.length > 0) {
                 if (!confirm("还有未提交的更改，确定回退吗？")) {
                     keysToggled.add('KeyH');
+                    this.frameRequestID = window.requestAnimationFrame(() => {
+                        this.iterate()
+                    });
                     return;
                 }
                 globals.state.state = this.simulatedStates[0][0];

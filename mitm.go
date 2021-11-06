@@ -13,7 +13,7 @@ import (
 
 const (
 	gameServer  = "http://localhost:4567"
-	localServer = "localhost:2333"
+	terminalListen = "localhost:2333"
 )
 
 var upgrader = websocket.Upgrader{
