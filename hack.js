@@ -318,6 +318,12 @@ class ProxyVisuals extends visuals.Visuals {
             ctx.fillRect(x, y, width, height);
         })
 
+        const negativeGra = globals.map.layers.metadata.getObjectsByType("negative_gravity");
+        ctx.fillStyle = "rgba(0, 255, 0, 0.7)";
+        negativeGra.forEach(({x, y, width, height}) => {
+            ctx.fillRect(x, y, width, height);
+        })
+
         return ret;
     }
 
