@@ -113,6 +113,9 @@ class ForcedInputNode(CircuitNode):
   def smt_output(self):
     return z3.BitVec(self.name, 1)
 
+  def smt_solve(self, solver: z3.Solver):
+    solver.add(self.smt_output() == 1)
+
 
 class Wire(CircuitNode):
   __object_type__ = "Wire"
