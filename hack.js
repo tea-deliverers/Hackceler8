@@ -530,7 +530,7 @@ function convertMouseToWorld({clientX, clientY}) {
 
 // copied from source
 function playerTick(state, input) {
-    const gravity = 31.2 * gameState.SEC_PER_TICK
+    let gravity = 31.2 * gameState.SEC_PER_TICK
 
     const currentX = this.x
     const currentY = this.y
@@ -559,24 +559,48 @@ function playerTick(state, input) {
         }
     }
 
+    // Zero Gravity zones
+    const zeroGravityZones = state.map.layers.metadata.getObjectsByType("zero_gravity")
+    for (let i = 0; i < zeroGravityZones.length; i++) {
+        const zeroGravityZone = zeroGravityZones[i]
+        if (this.x >= zeroGravityZone.x && this.x < zeroGravityZone.x + zeroGravityZone.width &&
+            this.y >= zeroGravityZone.y && this.y < zeroGravityZone.y + zeroGravityZone.height) {
+            gravity = 0.0
+            break
+        }
+    }
+
+    // Negative gravity zones
+    const negativeGravityZones = state.map.layers.metadata.getObjectsByType("negative_gravity")
+    for (let i = 0; i < negativeGravityZones.length; i++) {
+        const zeroGravityZone = negativeGravityZones[i]
+        if (this.x >= zeroGravityZone.x && this.x < zeroGravityZone.x + zeroGravityZone.width &&
+            this.y >= zeroGravityZone.y && this.y < zeroGravityZone.y + zeroGravityZone.height) {
+            gravity = -31.2 * gameState.SEC_PER_TICK
+            break
+        }
+    }
+
     // Allow jumps only if the player is on the ground at least one tick without
     // holding the UP arrow.
-    if (!this.canJump && this.solidGround && !("up" in input)) {
+    if (!this.canJump && this.jumpzone && !("up" in input)) {
         this.canJump = true
     }
 
-    if (this.canJump && !this.solidGround) {
+    if (this.canJump && !this.jumpzone) {
         this.canJump = false
     }
 
-    if (this.canJump) {
+    if (this.solidGround) {
         this.jumpV = this.pushGravity  // Push player into the ground.
+    } else {
+        this.jumpV = Math.min(this.maxFallSpeed, this.jumpV + gravity)
+    }
+
+    if (this.canJump) {
         if (("up" in input) && (this.jumpProgress == -1)) {
             this.jumpProgress = 0  // Start the jump;
         }
-
-    } else {
-        this.jumpV = Math.min(this.maxFallSpeed, this.jumpV + gravity)
     }
 
     if ("up" in input) {
@@ -600,10 +624,8 @@ function playerTick(state, input) {
         this.frameState, this.frame
     )
 
-    // TODO: calculatePotentialMove should actually both get the frame,
-    // and return whether "gravity" collision was hit.
     const [
-        newPosition, solidGround, collidingEntities
+        newPosition, solidGround, jumpzone, collidingEntities
     ] = state.calculatePotentialMove(
         [currentX, currentY],
         [this.moveV, this.jumpV],
@@ -614,6 +636,8 @@ function playerTick(state, input) {
     this.x = newPosition[0]
     this.y = newPosition[1]
     this.solidGround = solidGround
+    this.collidingEntities = collidingEntities
+    this.jumpzone = jumpzone
 
     // In case it wasn't possible to move vertically the whole way, cut the
     // jump velocity.
