@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -14,6 +16,8 @@ import (
 const (
 	gameServer  = "http://localhost:4567"
 	terminalListen = "localhost:2333"
+	gameServerAuthUsername = ""
+	gameServerAuthPassword = ""
 )
 
 var upgrader = websocket.Upgrader{
@@ -22,8 +26,18 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+func basicAuth(username, password string) string {
+	auth := username + ":" + password
+	return base64.StdEncoding.EncodeToString([]byte(auth))
+}
+
 func wsMitm(writer http.ResponseWriter, request *http.Request) {
-	server, _, err := websocket.DefaultDialer.Dial("ws"+gameServer[4:], nil)
+	var serverHeader http.Header
+	if gameServerAuthUsername != "" {
+		serverHeader = make(http.Header)
+		serverHeader.Add("Authorization", "Basic " + basicAuth(gameServerAuthUsername, gameServerAuthPassword))
+	}
+	server, _, err := websocket.DefaultDialer.Dial("ws"+gameServer[4:], serverHeader)
 	if err != nil {
 		log.Print("server:", err)
 		return
@@ -62,12 +76,32 @@ func wsMitm(writer http.ResponseWriter, request *http.Request) {
 		recvServer(client, server)
 	}()
 
+	go func() {
+		ticker := time.NewTicker(time.Second * 15)
+		defer ticker.Stop()
+		for _ = range ticker.C {
+			deadline := time.Now().Add(time.Second * 5)
+			err := client.WriteControl(websocket.PingMessage, nil, deadline)
+			if err != nil {
+				log.Println("ping client:", err)
+				return
+			}
+		}
+	}()
+
 	<-ctx.Done()
 }
 
 func main() {
 	gameServerUri, _ := url.ParseRequestURI(gameServer)
 	proxy := httputil.NewSingleHostReverseProxy(gameServerUri)
+	oldDirector := proxy.Director
+	proxy.Director = func(request *http.Request) {
+		oldDirector(request)
+		if (gameServerAuthUsername != "") {
+			request.SetBasicAuth(gameServerAuthUsername, gameServerAuthPassword)
+		}
+	}
 	proxy.ModifyResponse = func(response *http.Response) (err error) {
 		switch response.Request.URL.Path {
 		case "/main.js":
