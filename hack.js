@@ -624,7 +624,7 @@ function playerTick(state, input) {
 
 // Greedy Best First Search
 
-let searchTimeout = 500;
+let searchTimeout = 2000;
 
 function navigate(targetX, targetY) {
     const endTime = Date.now() + searchTimeout;
