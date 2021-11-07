@@ -83,13 +83,7 @@ class CircuitNode(Node):
     return result
 
 
-class InputMixin:
-  @functools.cache
-  def smt_output(self):
-    return z3.BitVec(self.name, 1)
-
-
-class Toggle(CircuitNode, InputMixin):
+class Toggle(CircuitNode):
   __object_type__ = "Toggle"
   _var: Optional[z3.BitVecRef] = None
 
@@ -97,17 +91,27 @@ class Toggle(CircuitNode, InputMixin):
     if len(self.input.inputs) != 0:
       raise ValueError(f"Rule violation: Extender {self.name}'s input {self.input.name} has input")
 
+  @functools.cache
+  def smt_output(self):
+    return z3.BitVec(self.name, 1)
 
-class Extender(CircuitNode, InputMixin):
+
+class Extender(CircuitNode):
   __object_type__ = "Extender"
 
   def _sanity_check(self) -> None:
     if len(self.input.inputs) != 0:
       raise ValueError(f"Rule violation: Extender {self.name}'s input {self.input.name} has input")
 
+  @functools.cache
+  def smt_output(self):
+    return z3.BitVec(self.name, 1)
 
-class ForcedInputNode(CircuitNode, InputMixin):
-  pass
+
+class ForcedInputNode(CircuitNode):
+  @functools.cache
+  def smt_output(self):
+    return z3.BitVec(self.name, 1)
 
 
 class Wire(CircuitNode):
