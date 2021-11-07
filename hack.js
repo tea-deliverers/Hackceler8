@@ -158,8 +158,10 @@ class ProxyVisuals extends visuals.Visuals {
     }
 
     updateRes() {
-        this.elEntities.width = RES_W;
-        this.elEntities.height = RES_H;
+        if (this.elEntities != null) {
+            this.elEntities.width = RES_W;
+            this.elEntities.height = RES_H;
+        }
         this.elFront.forEach(el => {
             el.style.width = `${100 * el.width / RES_W}%`
             el.style.height = `${100 * el.height / RES_H}%`
