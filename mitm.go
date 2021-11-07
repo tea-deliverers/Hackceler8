@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -73,6 +74,19 @@ func wsMitm(writer http.ResponseWriter, request *http.Request) {
 	go func() {
 		defer cancel()
 		recvServer(client, server)
+	}()
+
+	go func() {
+		ticker := time.NewTicker(time.Second * 15)
+		defer ticker.Stop()
+		for _ = range ticker.C {
+			deadline := time.Now().Add(time.Second * 5)
+			err := client.WriteControl(websocket.PingMessage, nil, deadline)
+			if err != nil {
+				log.Println("ping client:", err)
+				return
+			}
+		}
 	}()
 
 	<-ctx.Done()
