@@ -32,6 +32,8 @@
 
 橙色线：连接 `KeyReceptacle` 和其控制的 `Entity`
 
+红色实心方框：死亡区域
+
 ## 浏览器控制台
 
 - `closeFloat()` 关闭所有浮动窗口

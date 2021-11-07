@@ -307,6 +307,12 @@ class ProxyVisuals extends visuals.Visuals {
             });
         })
 
+        const deathZones = globals.map.layers.metadata.getObjectsByType("death");
+        ctx.fillStyle = "rgba(255, 0, 0, 0.8)";
+        deathZones.forEach(({x, y, width, height}) => {
+            ctx.fillRect(x, y, width, height);
+        })
+
         return ret;
     }
 
