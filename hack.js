@@ -621,10 +621,6 @@ function playerTick(state, input) {
 }
 
 // Greedy Best First Search
-function hashPlayer(player) {
-    const step = 4
-    return `${Math.floor(player.x / step)},${Math.floor(player.y / step)}`;
-}
 
 let searchTimeout = 500;
 
@@ -651,6 +647,8 @@ function navigate(targetX, targetY) {
         const {tile} = globals.map.framesets[player.frameSet].getFrame(player.frameState, player.frame);
         const box = tile.collisions[0];
         const x = box.x + player.x, y = box.y + player.y;
+        const targetDis = Math.hypot(x + box.width / 2 - targetX, y + box.height / 2 - targetY)
+        if (targetDis < 64) return targetDis / granularity * 0.6
         let min = Infinity;
         const cx = granularity * 12
         const cy = granularity * 4
@@ -666,6 +664,15 @@ function navigate(targetX, targetY) {
             }
         }
         return min === Infinity ? undefined : min;
+    }
+
+    const hashPlayer = player => {
+        const {tile} = globals.map.framesets[player.frameSet].getFrame(player.frameState, player.frame);
+        const box = tile.collisions[0];
+        const x = box.x + player.x, y = box.y + player.y;
+        const targetDis = Math.hypot(x + box.width / 2 - targetX, y + box.height / 2 - targetY)
+        const step = targetDis >= 64 ? 4 : 0.1;
+        return `${Math.floor(player.x / step) * step},${Math.floor(player.y / step) * step}`;
     }
 
     const playerCoord = getPosition(player);
@@ -704,11 +711,13 @@ function navigate(targetX, targetY) {
             heightCache.set(coord, res)
             return res
         };
-        distance.set(`${tX},${tY}`, 0);
+        for (let i = -1; i <= 1; i++)
+            for (let j = -1; j <= 1; j++)
+                distance.set(`${tX + i},${tY + j}`, 0);
         while (queue.length > 0) {
             if (Date.now() > endTime) return;
             const [, frontX, frontY] = MinHeap.pop(queue);
-            if (frontX === playerCoordX && frontY === playerCoordY) break;
+            if (Math.hypot(frontX - playerCoordX, frontY - playerCoordY) < 3) break;
 
             const coord = `${frontX},${frontY}`;
             if (visited.has(coord)) continue;
@@ -748,8 +757,8 @@ function navigate(targetX, targetY) {
             });
         }
     }
-    //console.log(Date.now() - (endTime - searchTimeout))
     const initDist = heuristic(player);
+    console.log('time: ' + (Date.now() - (endTime - searchTimeout)) + ', initDist: ' + initDist)
     if (!initDist) return;
 
     const possibleActions = [
@@ -785,7 +794,7 @@ function navigate(targetX, targetY) {
                     for (let i = 0; i < pressingLength; i++) actions.unshift(action);
                     cur = prev;
                 }
-                //console.log(Date.now() - (endTime - searchTimeout))
+                console.log(Date.now() - (endTime - searchTimeout))
                 return actions;
             }
         }
