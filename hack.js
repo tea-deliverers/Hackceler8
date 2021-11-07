@@ -248,7 +248,9 @@ class ProxyVisuals extends visuals.Visuals {
             ctx.beginPath();
             ctx.arrow(midX - xOffset, midY - yOffset,
                 e.target.x - xOffset, e.target.y - yOffset,
-                [0, this.mapMover.scale / 2, -10, this.mapMover.scale / 2, -10, 5]);
+                [0, this.mapMover.scale / 2,
+                    -10, this.mapMover.scale / 2,
+                    this.mapMover.scale * -10, this.mapMover.scale * 5]);
             ctx.fill();
         }
 

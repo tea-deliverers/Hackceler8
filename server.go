@@ -85,7 +85,7 @@ func recvServer(client, server *websocket.Conn) {
 					return
 				}
 				saveChal := filepath.Join(challDir, fmt.Sprintf("%s-%d.json",
-					forbiddenNames.ReplaceAllString(challengeID, "-")+".json",
+					forbiddenNames.ReplaceAllString(challengeID, "-"),
 					time.Now().UnixNano()))
 				err = os.WriteFile(saveChal, data, 0777)
 				if err != nil {
