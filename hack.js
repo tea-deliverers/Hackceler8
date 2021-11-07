@@ -89,7 +89,7 @@ const initWidth = RES_W;
 class MapMover {
     offsetX = 0
     offsetY = 0
-    #scale = 1
+    scale = 1
 
     resetView() {
         this.offsetX = this.offsetY = 0;
@@ -102,16 +102,16 @@ class MapMover {
             if (!globals.visuals) return;
             const RATIO = 16 / 9;
 
-            this.#scale += e.deltaY / 500;
-            RES_W = initWidth * this.#scale;
+            this.scale += e.deltaY / 500;
+            RES_W = initWidth * this.scale;
             RES_H = RES_W / RATIO;
             globals.visuals.updateRes();
         })
 
         window.addEventListener('mousemove', ({movementX, movementY}) => {
             if (!('ShiftLeft' in globals.game.keyStates)) return;
-            this.offsetX -= movementX * this.#scale;
-            this.offsetY -= movementY * this.#scale;
+            this.offsetX -= movementX * this.scale;
+            this.offsetY -= movementY * this.scale;
         });
     }
 }
@@ -199,6 +199,7 @@ class ProxyVisuals extends visuals.Visuals {
         const ctx = this.elContext;
         /** <-- copied from source **/
 
+        ctx.lineWidth = this.mapMover.scale;
         if (e.type === "Key") {
             if (!e.pickupAble) return;
             const {x, y} = globals.state.state.entities.player;
@@ -245,7 +246,7 @@ class ProxyVisuals extends visuals.Visuals {
             ctx.beginPath();
             ctx.arrow(midX - xOffset, midY - yOffset,
                 e.target.x - xOffset, e.target.y - yOffset,
-                [0, 0.5, -10, 0.5, -10, 5]);
+                [0, this.mapMover.scale / 2, -10, this.mapMover.scale / 2, -10, 5]);
             ctx.fill();
         }
 
@@ -308,7 +309,7 @@ class ProxyVisuals extends visuals.Visuals {
         })
 
         const deathZones = globals.map.layers.metadata.getObjectsByType("death");
-        ctx.fillStyle = "rgba(255, 0, 0, 0.8)";
+        ctx.fillStyle = "rgba(255, 0, 0, 0.7)";
         deathZones.forEach(({x, y, width, height}) => {
             ctx.fillRect(x, y, width, height);
         })
