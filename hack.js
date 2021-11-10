@@ -468,7 +468,7 @@ class ProxyGame extends game.Game {
 
         if (!keysToggled.has('KeyH')) {
             if (this.simulatedStates.length > 0) {
-                if (!confirm("还有未提交的更改，确定回退吗？")) {
+                if (!confirm("Has uncommitted changes, sure you wanna rollback?")) {
                     keysToggled.add('KeyH');
                     this.frameRequestID = window.requestAnimationFrame(() => {
                         this.iterate()

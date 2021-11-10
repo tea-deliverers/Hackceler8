@@ -1,43 +1,56 @@
 # Hackceler8 Game Tools
 
-## 操作
-推荐使用方向键控制。
+## Controls
+Recommending using arrow keys to move.
 
-- 滚轮缩放
-- <kbd>Shift</kbd> 移动地图
-- <kbd>V</kbd> 重设中心点为玩家
-- <kbd>B</kbd> 显示 `Entity`
-- <kbd>H</kbd> 开启模拟模式
+- Wheel scroll to zoom in/out
+- <kbd>Shift</kbd> to move the map
+- <kbd>V</kbd> to reset camera center to player
+- <kbd>B</kbd> show `Entity`
+- <kbd>H</kbd> enable simulation mode
 
-  在模拟模式下：
-  - 不动不记录 `Tick`
-  - 用鼠标指向目的地，按 <kbd>`</kbd> 瞬移过去（搜索，有可能不成功）
-  - <kbd>Z</kbd> 倒退
-  - <kbd>X</kbd> 前进
-  - <kbd>,</kbd> 减速
-  - <kbd>.</kbd> 加速
-  - <kbd>LeftCtrl</kbd> 暂时加速
-  - <kbd>T</kbd> 提交
+  Under simulation mode:
+  - `Tick` won't be recorded if the player is standing still
+  - Point to destination, press <kbd>`</kbd> to teleport (path finding, may not succeed)
+  - <kbd>Z</kbd> to undo ticks
+  - <kbd>X</kbd> to redo ticks
+  - <kbd>,</kbd> to decelerate
+  - <kbd>.</kbd> to accelerate
+  - <kbd>LeftCtrl</kbd> to temporarily accelerate
+  - <kbd>T</kbd> to submit
 
-  再次按 <kbd>H</kbd> 重新与服务端同步
+  Press <kbd>H</kbd> again to sync with the server
 
-## 显示
-蓝黄色方框：碰撞盒
+## Display
+Blue-yellow rectangle: Collision box
 
-白色线：连接 `Terminal` 和 `FlagConsole`
+White line: Connects `Terminal` and `FlagConsole`
 
-紫红色线：`Portal` 指向其目的地
+Magenta line: `Portal` pointing to its destination
 
-绿色线：连接玩家和 `Key`
+Green line: Connects player and `Key`
 
-橙色线：连接 `KeyReceptacle` 和其控制的 `Entity`
+Orange line: Connects `KeyReceptacle` and its controlling `Entity`
 
-红色实心方框：死亡区域
+Red solid box: Death zone
 
-## 浏览器控制台
+## Dev Console
 
-- `closeFloat()` 关闭所有浮动窗口
+- `closeFloat()` to close all floating windows
+- `searchTimeout` to set path searching timeout
 
-## `Terminal` 转发
+## `Terminal` relay
 
-转发到 `localServer` 下。数据均以 hex 编码，换行结尾。
+Relays in-game `Terminal` to `localServer` (configured in `mitm.go`). Data is encoded in hex, with a newline character as end-of-line.
+
+## Other
+
+You may need to update related code in `hack.js` if the server/client-side code is changed. Directly copied code are commented with `copied from source`.
+
+For example, update `playerTick` function if the corresponding `entities.Player.tick` is changed in the game code.
+
+## Demo
+
+[Tick Undo](https://imgur.com/a/7afbXqO)
+
+[Path Finding](https://imgur.com/EunmgGJ)
